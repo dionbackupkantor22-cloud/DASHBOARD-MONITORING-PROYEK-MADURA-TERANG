@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Dashboard Monitoring Proyek Madura Terang",
+  "description": "Executive dashboard monitoring distribusi genset, kapasitas, mobilisasi, dan instalasi Proyek Madura Terang.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
