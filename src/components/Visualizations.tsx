@@ -2,13 +2,8 @@ import React, { useState } from 'react';
 import {
   BarChart3,
   PieChart as PieIcon,
-  MapPin,
   Layers,
   Info,
-  CheckCircle2,
-  Clock,
-  HelpCircle,
-  Fuel,
   Gauge,
   AlertTriangle,
   RotateCw,
@@ -58,7 +53,7 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
       color: '#f59e0b', // amber-500
       bgClass: 'bg-amber-500',
       percent: metrics.totalUnits > 0 ? (metrics.unitBelumTiba / metrics.totalUnits) * 100 : 0,
-      description: 'Unit dalam transit logistik (target kedatangan 26 Okt 2026).',
+      description: 'Unit dalam transit logistik menuju titik gardu penempatan.',
     },
   ];
 
@@ -74,6 +69,21 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
   const maxUlpBeban = Math.max(...metrics.regionMetrics.map((r) => r.totalBebanKva), 1);
   const maxUlpUnits = Math.max(...metrics.regionMetrics.map((r) => r.unitCount), 1);
 
+  // Top 2 ULPs dynamically computed
+  const topRegionsText = metrics.regionMetrics
+    .filter((r) => r.wilayah !== 'Belum Tiba' && r.wilayah !== 'Belum Ditentukan')
+    .slice(0, 2)
+    .map((r) => `${r.wilayah} (${r.unitCount} unit)`)
+    .join(' & ');
+
+  // Dynamic overload units summary text (Operasi only)
+  const overloadText =
+    metrics.overloadUnits.length > 0
+      ? metrics.overloadUnits
+          .map((u) => `Gardu ${u.gardu} ${u.ulp} (${u.persenBeban}%)`)
+          .join(', ')
+      : 'Tidak ada genset berstatus Operasi yang melebihi batas beban 80%';
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       
@@ -86,7 +96,7 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
               Sebaran per Unit Layanan Pelanggan (ULP)
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Alokasi kapasitas dan beban operasional di masing-masing area Madura
+              Alokasi kapasitas dan beban operasional aktif di masing-masing area Madura
             </p>
           </div>
           
@@ -110,7 +120,7 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Beban Riil
+              Beban Operasi
             </button>
             <button
               onClick={() => setMetricMode('units')}
@@ -183,10 +193,12 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
         </div>
 
         <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
-          <span>Total ULP Terlayani: {metrics.regionMetrics.length} Area</span>
-          <span className="font-medium text-slate-700">
-            Terbanyak: PAMEKASAN (10 unit) & SUMENEP (6 unit)
-          </span>
+          <span>Total Area Terdata: {metrics.regionMetrics.length} Kategori Wilayah</span>
+          {topRegionsText && (
+            <span className="font-medium text-slate-700">
+              Terbanyak: {topRegionsText}
+            </span>
+          )}
         </div>
       </div>
 
@@ -287,7 +299,7 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
         <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500 flex items-center gap-1.5">
           <Info className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
           <span>
-            22 dari 32 unit (68,8%) telah berada di daratan Madura (20 beroperasi aktif, 2 siap komisioning).
+            {metrics.unitOperasi + metrics.unitDilokasi} dari {metrics.totalUnits} unit ({metrics.realisasiTibaPersen.toFixed(1)}%) telah berada di daratan Madura ({metrics.unitOperasi} beroperasi aktif, {metrics.unitDilokasi} siap komisioning).
           </span>
         </div>
       </div>
@@ -372,7 +384,7 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
         </div>
       </div>
 
-      {/* Chart 4: Profil Pembebanan Kritis (>80%) & Manajemen Relokasi */}
+      {/* Chart 4: Profil Pembebanan Kritis (>=80%) & Manajemen Relokasi */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
         <div>
           <div className="pb-4 border-b border-slate-100">
@@ -381,22 +393,22 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
               Profil Beban Operasi & Unit Prioritas Relokasi
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Identifikasi genset dengan pembebanan tinggi dan rencana optimasi penempatan
+              Identifikasi genset berstatus Operasi dengan pembebanan tinggi dan rencana optimasi penempatan
             </p>
           </div>
 
           <div className="mt-5 space-y-3">
-            {/* Critical unit list */}
+            {/* Critical unit list (Strictly 'Operasi' units >= 80%) */}
             <div className="p-3 rounded-lg border border-red-200 bg-red-50/50 text-xs">
               <div className="flex items-center justify-between font-bold text-red-900 mb-1">
                 <span className="flex items-center gap-1.5">
                   <AlertTriangle className="h-4 w-4 text-red-600" />
-                  Genset Beban Kritis (&gt;80% Kapasitas):
+                  Genset Operasi Beban Kritis (&gt;=80% Kapasitas):
                 </span>
                 <span className="font-mono">{metrics.unitOverloadCount} Unit</span>
               </div>
               <p className="text-red-700 text-[11px] leading-relaxed">
-                Gardu <strong>KF316 (98%)</strong>, <strong>KJ709 (90%)</strong>, <strong>KA0482 (84%)</strong>, dan <strong>KA0026 (82%)</strong> beroperasi pada batas kapasitas atas. Perlu pembagian fasa atau relokasi kapasitas genset lebih besar.
+                <strong>{overloadText}</strong> beroperasi pada batas kapasitas atas. Perlu pembagian fasa atau relokasi kapasitas genset lebih besar.
               </p>
             </div>
 
@@ -410,15 +422,15 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
                 <span className="font-mono">{metrics.potensiRelokasiCount} Unit</span>
               </div>
               <p className="text-amber-800 text-[11px] leading-relaxed">
-                Termasuk No 8 <strong>KC412</strong> (Trip Over Current) rencana pindah ke <strong>KC713</strong>, serta potensi relokasi di gardu Waru (KJ002) dan Ketapang (KF164).
+                Termasuk unit di gardu <strong>KC412</strong> (Trip Over Current) rencana pindah ke <strong>KC713</strong>, serta titik potensi relokasi di gardu Waru, Ketapang, Pamekasan, dan Sumenep.
               </p>
             </div>
           </div>
         </div>
 
         <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-          <span>Rata-rata Pembebanan: <strong>{metrics.rataRataLoadingPersen}%</strong></span>
-          <span className="font-semibold text-slate-700">Total Beban Terlayani: {metrics.totalBebanOperasiKva.toLocaleString('id-ID')} kVA</span>
+          <span>Rata-rata Pembebanan Operasi: <strong>{metrics.rataRataLoadingPersen}%</strong></span>
+          <span className="font-semibold text-slate-700">Total Beban Operasi: {metrics.totalBebanOperasiKva.toLocaleString('id-ID')} kVA</span>
         </div>
       </div>
 

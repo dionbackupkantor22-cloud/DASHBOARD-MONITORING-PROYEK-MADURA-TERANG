@@ -133,7 +133,7 @@ export const ExecutiveSummaryBanner: React.FC<ExecutiveSummaryBannerProps> = ({
           }`}
         >
           <AlertTriangle className="h-3.5 w-3.5" />
-          Beban Kritis &gt;80% ({metrics.unitOverloadCount})
+          Beban Kritis Operasi &gt;=80% ({metrics.unitOverloadCount})
         </button>
 
         <button

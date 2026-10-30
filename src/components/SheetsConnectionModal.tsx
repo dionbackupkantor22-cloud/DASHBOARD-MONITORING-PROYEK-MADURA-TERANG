@@ -5,23 +5,24 @@ import {
   Database,
   Check,
   AlertCircle,
-  ExternalLink,
   ShieldCheck,
   RefreshCw,
   LogIn,
+  Globe,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
-import { DataSourceState } from '../types/dashboard';
+import { DataSourceState, DashboardMetrics } from '../types/dashboard';
 import { extractSpreadsheetId } from '../services/dataService';
 
 interface SheetsConnectionModalProps {
   isOpen: boolean;
   onClose: () => void;
   dataSource: DataSourceState;
+  metrics: DashboardMetrics;
   user: User | null;
   onLogin: () => void;
   onSelectSourceType: (type: 'source_file' | 'google_sheets_live') => void;
-  onConnectSheetsId: (sheetId: string) => Promise<void>;
+  onConnectSheetsId: (sheetInput: string) => Promise<void>;
   isLoggingIn: boolean;
 }
 
@@ -29,6 +30,7 @@ export const SheetsConnectionModal: React.FC<SheetsConnectionModalProps> = ({
   isOpen,
   onClose,
   dataSource,
+  metrics,
   user,
   onLogin,
   onSelectSourceType,
@@ -47,18 +49,13 @@ export const SheetsConnectionModal: React.FC<SheetsConnectionModalProps> = ({
 
     const sheetId = extractSpreadsheetId(inputUrl);
     if (!sheetId) {
-      setLocalError('Harap masukkan URL Spreadsheet atau ID Spreadsheet Google yang valid.');
-      return;
-    }
-
-    if (!user) {
-      setLocalError('Harap Masuk dengan Google terlebih dahulu untuk memberikan izin akses membaca Google Sheets.');
+      setLocalError('Harap masukkan URL Google Sheets atau ID Spreadsheet yang valid.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await onConnectSheetsId(sheetId);
+      await onConnectSheetsId(inputUrl.trim());
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal menghubungkan ke Google Sheets';
@@ -85,10 +82,10 @@ export const SheetsConnectionModal: React.FC<SheetsConnectionModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white">
-                Konfigurasi Sumber Data Spreadsheet
+                Konfigurasi Sinkronisasi Otomatis Spreadsheet
               </h3>
               <p className="text-xs text-slate-400">
-                Pilih sumber data live Google Sheets atau file dataset Proyek Madura Terang
+                Sinkronisasi otomatis setiap 30 detik &amp; saat tab aktif tanpa perlu login manual
               </p>
             </div>
           </div>
@@ -106,7 +103,7 @@ export const SheetsConnectionModal: React.FC<SheetsConnectionModalProps> = ({
           {/* Active Source Selector */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-              Pilih Moda Integrasi Data:
+              Pilih Sumber Data Otomatis:
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -133,15 +130,15 @@ export const SheetsConnectionModal: React.FC<SheetsConnectionModalProps> = ({
                     )}
                   </div>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Membaca dataset aktual <strong>Data_Penempatan_Genset_Mobile</strong> (32 unit genset, 9.710 kVA, beban riil, konsumsi BBM, gardu, relokasi, dan titik Google Maps).
+                    Membaca langsung dataset <strong>Data_Penempatan_Genset_Mobile</strong> ({metrics.totalUnits} unit genset, {metrics.totalCapacityKva.toLocaleString('id-ID')} kVA, {metrics.unitOperasi} unit operasi, beban &amp; BBM aktual).
                   </p>
                 </div>
                 <span className="text-[10px] font-semibold text-emerald-800 mt-2 bg-emerald-100/60 px-2 py-0.5 rounded w-fit">
-                  Data Terverifikasi Siap Pakai
+                  Auto-Sync 30 Detik + Fokus Tab
                 </span>
               </div>
 
-              {/* Option 2: Live Google Sheets API */}
+              {/* Option 2: Live Google Sheets via Public Link */}
               <div
                 onClick={() => onSelectSourceType('google_sheets_live')}
                 className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
@@ -153,8 +150,8 @@ export const SheetsConnectionModal: React.FC<SheetsConnectionModalProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="font-bold text-slate-900 flex items-center gap-1.5">
-                      <FileSpreadsheet className="h-4 w-4 text-blue-600" />
-                      Google Sheets Live
+                      <Globe className="h-4 w-4 text-blue-600" />
+                      Link Publik Google Sheets
                     </span>
                     {dataSource.sourceType === 'google_sheets_live' && (
                       <span className="h-4 w-4 rounded-full bg-emerald-600 text-white flex items-center justify-center">
@@ -163,64 +160,33 @@ export const SheetsConnectionModal: React.FC<SheetsConnectionModalProps> = ({
                     )}
                   </div>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Sinkronisasi langsung dengan file Google Sheets di Google Drive via Google Sheets API resmi.
+                    Sinkronisasi langsung dari link publik Google Sheets tanpa perlu login, tersimpan otomatis untuk seluruh sesi berikutnya.
                   </p>
                 </div>
                 <span className="text-[10px] font-semibold text-blue-800 mt-2 bg-blue-100/60 px-2 py-0.5 rounded w-fit">
-                  Real-time Cloud Sync
+                  Tanpa Login • Tersimpan Permanen
                 </span>
               </div>
 
             </div>
           </div>
 
-          {/* Google Auth Status Banner */}
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-full bg-white border border-slate-200 flex items-center justify-center flex-shrink-0">
-                <ShieldCheck className="h-4 w-4 text-emerald-700" />
-              </div>
-              <div>
-                <span className="font-semibold text-slate-800 block text-xs">
-                  {user ? `Terhubung: ${user.email || user.displayName}` : 'Autentikasi Google Workspace'}
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  {user
-                    ? 'Izin akses baca Google Sheets (spreadsheets.readonly) aktif.'
-                    : 'Masuk dengan Google untuk mengizinkan aplikasi membaca Google Sheets Anda.'}
-                </span>
-              </div>
-            </div>
-
-            {!user && (
-              <button
-                type="button"
-                onClick={onLogin}
-                disabled={isLoggingIn}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-900 hover:bg-slate-100 border border-slate-300 shadow-xs flex-shrink-0 transition-colors"
-              >
-                <LogIn className="h-3.5 w-3.5 text-blue-600" />
-                <span>{isLoggingIn ? 'Memproses...' : 'Masuk Google'}</span>
-              </button>
-            )}
-          </div>
-
-          {/* Form for Google Sheets URL if Live Sheets is selected */}
+          {/* Form for Google Sheets URL (Works without Login via Public CSV) */}
           {dataSource.sourceType === 'google_sheets_live' && (
             <form onSubmit={handleApplySheets} className="space-y-3 pt-1">
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  URL Spreadsheet atau Spreadsheet ID:
+                  URL Google Sheets Publik atau Spreadsheet ID:
                 </label>
                 <input
                   type="text"
                   value={inputUrl}
                   onChange={(e) => setInputUrl(e.target.value)}
-                  placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5.../edit"
+                  placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5.../edit?gid=0"
                   className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-600 text-slate-900"
                 />
                 <span className="text-[10px] text-slate-500 mt-1 block">
-                  Tempel link spreadsheet proyek atau ID dari URL dokumen Google Sheets Anda.
+                  Pastikan akses berbagi Google Sheets disetel ke <strong>&quot;Siapa saja yang memiliki link dapat melihat&quot;</strong> agar tersinkron otomatis tanpa login.の設定 ini cukup dilakukan 1 kali dan akan diingat otomatis.
                 </span>
               </div>
 
@@ -231,36 +197,53 @@ export const SheetsConnectionModal: React.FC<SheetsConnectionModalProps> = ({
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex items-center justify-between gap-2 pt-2">
+                {!user ? (
+                  <button
+                    type="button"
+                    onClick={onLogin}
+                    disabled={isLoggingIn}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition-colors"
+                  >
+                    <LogIn className="h-3.5 w-3.5 text-blue-600" />
+                    <span>{isLoggingIn ? 'Memproses...' : 'Opsi Login Google (Jika Sheet Privat)'}</span>
+                  </button>
+                ) : (
+                  <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Akun: {user.email}
+                  </span>
+                )}
+
                 <button
                   type="submit"
-                  disabled={isSubmitting || !user}
+                  disabled={isSubmitting}
                   className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white shadow-sm transition-all ${
-                    isSubmitting || !user
+                    isSubmitting
                       ? 'bg-slate-400 cursor-not-allowed'
                       : 'bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800'
                   }`}
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isSubmitting ? 'animate-spin' : ''}`} />
-                  <span>{isSubmitting ? 'Memverifikasi...' : 'Hubungkan & Sinkronkan'}</span>
+                  <span>{isSubmitting ? 'Menghubungkan...' : 'Simpan & Sinkronkan Otomatis'}</span>
                 </button>
               </div>
             </form>
           )}
 
-          {/* Read-only Governance Notice */}
+          {/* Read-only & Auto-Sync Governance Notice */}
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-[11px] text-slate-600 space-y-1">
             <span className="font-semibold text-slate-800 block">
-              Prinsip Keamanan & Tata Kelola Data:
+              Mekanisme Sinkronisasi Realtime Otomatis:
             </span>
             <p>
-              • Dashboard bersifat <strong>read-only</strong>. Sistem tidak mengubah, mengedit, atau menghapus sel pada Google Sheets sumber.
+              • Pembaruan data berjalan otomatis setiap <strong>30 detik</strong> serta <strong>seketika saat tab browser dibuka kembali</strong>.
             </p>
             <p>
-              • Akses token OAuth disimpan murni di memori kerja (in-memory) dan tidak pernah disimpan ke local storage browser.
+              • Konfigurasi link spreadsheet disimpan secara persisten sehingga tidak perlu diinput ulang saat halaman di-refresh.
             </p>
             <p>
-              • Pembaruan data otomatis berjalan di latar belakang setiap <strong>60 detik</strong> dengan proteksi anti-duplicate request.
+              • Perhitungan KPI untuk Beban, BBM, dan Unit Overload (&gt;=80%) diselaraskan 100% khusus dari unit berstatus <strong>Operasi</strong>.
             </p>
           </div>
 
@@ -269,7 +252,7 @@ export const SheetsConnectionModal: React.FC<SheetsConnectionModalProps> = ({
         {/* Footer */}
         <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex justify-between items-center text-xs">
           <span className="text-slate-500 text-[11px]">
-            Mode Saat Ini: <strong>{dataSource.sourceType === 'google_sheets_live' ? 'Google Sheets Live' : 'Spreadsheet Sumber Proyek'}</strong>
+            Mode Aktif: <strong>{dataSource.sourceType === 'google_sheets_live' ? 'Link Publik Google Sheets (Auto-Sync)' : 'Spreadsheet Sumber Proyek (Auto-Sync)'}</strong>
           </span>
           <button
             onClick={onClose}

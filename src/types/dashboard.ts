@@ -5,7 +5,7 @@ export interface GensetRecord {
   genset: string; // e.g. "600 kVA", "300 kVA"
   capacityKva: number; // e.g. 600, 500, 350, 300, 250, 160
   
-  // New Operational Fields from Spreadsheet
+  // Operational Fields from Spreadsheet
   status: 'Operasi' | 'Dilokasi' | 'Belum Tiba' | string;
   tglTiba: string; // e.g. "24 Oct 2026"
   tglInstall: string; // e.g. "24 Oct 2026", "25 Oct 2026"
@@ -30,7 +30,8 @@ export interface GensetRecord {
   titikLokasiBaru: string; // Google Maps URL (Relokasi)
   keterangan: string; // e.g. "TRIP OVER CURRENT", "GENSET PLN DI STADION"
   tindakLanjut: string; // e.g. "RELOKASI", "ATS"
-  team: string; // e.g. "UP3 MDR", "HAR SBB"
+  atributPerangkat: string; // e.g. "ATS" from column before TEAM
+  team: string; // e.g. "UP3 MDR", "HAR SBB", or "-"
 
   // Geographic coordinates for map plotting
   coordinates: {
@@ -76,6 +77,15 @@ export interface RegionMetric {
   garduList: string[];
 }
 
+export interface OverloadUnitSummary {
+  no: string;
+  gardu: string;
+  ulp: string;
+  persenBeban: number;
+  bebanKva: number;
+  capacityKva: number;
+}
+
 export interface DashboardMetrics {
   totalUnits: number;
   totalCapacityKva: number;
@@ -93,12 +103,14 @@ export interface DashboardMetrics {
   unitBelumTiba: number;
   unitBelumTibaKva: number;
 
-  // Operational Load & Fuel
+  // Operational Load & Fuel (Strictly from 'Operasi' units)
   totalBebanOperasiKva: number;
   totalEstimasiBbmLiterJam: number;
   rataRataLoadingPersen: number;
   maxLoadingPersen: number;
-  unitOverloadCount: number; // >80% loading
+  maxLoadingGardu: string;
+  unitOverloadCount: number; // >=80% loading among 'Operasi' units
+  overloadUnits: OverloadUnitSummary[];
   potensiRelokasiCount: number; // relokasi flagged
 
   // Percentages with denominators
@@ -133,6 +145,7 @@ export interface ManagementActionItem {
 export interface DataSourceState {
   sourceType: 'source_file' | 'google_sheets_live';
   spreadsheetId?: string;
+  spreadsheetGid?: string;
   sheetName?: string;
   lastUpdated: Date | null;
   isSyncing: boolean;
@@ -147,6 +160,6 @@ export interface FilterState {
   status: string; // 'ALL' | 'Operasi' | 'Dilokasi' | 'Belum Tiba'
   ulp: string; // 'ALL' or specific ULP
   relokasiOnly: boolean;
-  overloadOnly: boolean; // >80% loading
+  overloadOnly: boolean; // >=80% loading among 'Operasi' units
   team: string; // 'ALL' or specific
 }

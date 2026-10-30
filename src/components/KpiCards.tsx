@@ -205,7 +205,7 @@ export const KpiCards: React.FC<KpiCardsProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-              Status Operasional Penempatan 32 Unit Genset Madura
+              Status Operasional Penempatan {metrics.totalUnits} Unit Genset Madura
             </span>
             <span className="text-xs text-slate-500">
               (Total {metrics.totalCapacityKva.toLocaleString('id-ID')} kVA / ~{metrics.totalCapacityMva} MVA)

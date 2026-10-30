@@ -157,13 +157,13 @@ export const ManagementAttention: React.FC<ManagementAttentionProps> = ({
         </div>
 
         <div>
-          <span className="text-slate-500 block text-[11px]">Beban Kritis (&gt;80%):</span>
+          <span className="text-slate-500 block text-[11px]">Beban Kritis Operasi (&gt;=80%):</span>
           <span className="font-bold text-orange-700 font-mono text-sm flex items-center gap-1">
             <Gauge className="h-3.5 w-3.5" />
             {metrics.unitOverloadCount} Unit
           </span>
           <span className="text-[10px] text-slate-500 block">
-            Max 98% di KF316 Ketapang
+            Max {metrics.maxLoadingPersen}% di {metrics.maxLoadingGardu}
           </span>
         </div>
 

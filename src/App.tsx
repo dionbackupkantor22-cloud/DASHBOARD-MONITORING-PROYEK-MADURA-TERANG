@@ -8,10 +8,15 @@ import {
   FilterState,
 } from './types/dashboard';
 import {
+  AUTO_REFRESH_INTERVAL_SECONDS,
   loadFromSourceFile,
   loadFromGoogleSheets,
   calculateMetrics,
   generateManagementActionItems,
+  loadSavedDataSourceConfig,
+  saveDataSourceConfig,
+  extractSpreadsheetId,
+  extractSpreadsheetGid,
 } from './services/dataService';
 import { initAuth, googleSignIn, logout, getAccessToken } from './services/firebase';
 import { Header } from './components/Header';
@@ -28,12 +33,11 @@ import {
   ShieldAlert,
   TableProperties,
   Layers,
-  MapPin,
   Navigation,
 } from 'lucide-react';
 
 export default function App() {
-  // Authentication state
+  // Authentication state (optional fallback for private sheets)
   const [user, setUser] = useState<User | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
 
@@ -43,16 +47,20 @@ export default function App() {
   // Sheets modal state
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState<boolean>(false);
 
+  // Load persisted data source config so no manual input is required on reload
+  const initialConfig = useMemo(() => loadSavedDataSourceConfig(), []);
+
   // Data Source & Sync State
   const [dataSource, setDataSource] = useState<DataSourceState>({
-    sourceType: 'source_file',
-    spreadsheetId: '',
-    sheetName: '',
+    sourceType: initialConfig.sourceType,
+    spreadsheetId: initialConfig.spreadsheetId,
+    spreadsheetGid: initialConfig.spreadsheetGid,
+    sheetName: initialConfig.sheetName,
     lastUpdated: null,
     isSyncing: false,
     isStale: false,
     error: null,
-    autoRefreshCountdown: 60,
+    autoRefreshCountdown: AUTO_REFRESH_INTERVAL_SECONDS,
   });
 
   // Filter State
@@ -69,7 +77,6 @@ export default function App() {
   // Records & Cached Records
   const [records, setRecords] = useState<GensetRecord[]>([]);
   const isFetchingRef = useRef<boolean>(false);
-  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Initialize Auth on mount
   useEffect(() => {
@@ -87,9 +94,8 @@ export default function App() {
     };
   }, []);
 
-  // Fetch data function
-  const fetchData = useCallback(async (isManual = false) => {
-    // Prevent overlapping concurrent requests
+  // Fetch data function (zero-login public Google Sheets CSV or cache-busted source file)
+  const fetchData = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
 
@@ -104,13 +110,13 @@ export default function App() {
 
       if (dataSource.sourceType === 'google_sheets_live' && dataSource.spreadsheetId) {
         const token = await getAccessToken();
-        if (!token) {
-          throw new Error('Sesi Google Sheets memerlukan autentikasi. Silakan Masuk dengan Google.');
-        }
-        const result = await loadFromGoogleSheets(dataSource.spreadsheetId, token);
+        const result = await loadFromGoogleSheets(
+          dataSource.spreadsheetId,
+          token,
+          dataSource.spreadsheetGid || '0'
+        );
         loadedRecords = result.records;
       } else {
-        // Load default verified source file
         loadedRecords = await loadFromSourceFile();
       }
 
@@ -121,7 +127,7 @@ export default function App() {
         isStale: false,
         lastUpdated: new Date(),
         error: null,
-        autoRefreshCountdown: 60,
+        autoRefreshCountdown: AUTO_REFRESH_INTERVAL_SECONDS,
       }));
     } catch (err: unknown) {
       console.error('Fetch data error:', err);
@@ -131,28 +137,36 @@ export default function App() {
         isSyncing: false,
         isStale: prev.lastUpdated !== null,
         error: msg,
+        autoRefreshCountdown: AUTO_REFRESH_INTERVAL_SECONDS,
       }));
     } finally {
       isFetchingRef.current = false;
     }
-  }, [dataSource.sourceType, dataSource.spreadsheetId]);
+  }, [dataSource.sourceType, dataSource.spreadsheetId, dataSource.spreadsheetGid]);
 
-  // Initial load
+  // Keep latest fetchData reference for intervals and tab focus triggers
+  const fetchDataRef = useRef(fetchData);
+  useEffect(() => {
+    fetchDataRef.current = fetchData;
+  }, [fetchData]);
+
+  // Initial load & when source changes
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // 60-Second Auto Refresh Interval & 1-second Countdown
+  // 30-Second Auto Refresh Interval (cleanly separated from state updater)
   useEffect(() => {
-    countdownTimerRef.current = setInterval(() => {
+    const timer = setInterval(() => {
       setDataSource((prev) => {
         if (prev.isSyncing) return prev;
-
         if (prev.autoRefreshCountdown <= 1) {
-          fetchData();
-          return { ...prev, autoRefreshCountdown: 60 };
+          // Trigger fetch asynchronously outside the state transition
+          queueMicrotask(() => {
+            fetchDataRef.current();
+          });
+          return { ...prev, autoRefreshCountdown: AUTO_REFRESH_INTERVAL_SECONDS };
         }
-
         return {
           ...prev,
           autoRefreshCountdown: prev.autoRefreshCountdown - 1,
@@ -160,10 +174,28 @@ export default function App() {
       });
     }, 1000);
 
-    return () => {
-      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Immediate Auto-Sync when user returns to browser tab / window gains focus
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDataRef.current();
+      }
     };
-  }, [fetchData]);
+    const handleWindowFocus = () => {
+      fetchDataRef.current();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, []);
 
   // Calculated Metrics & Action Items
   const metrics = useMemo<DashboardMetrics>(() => {
@@ -174,7 +206,7 @@ export default function App() {
     return generateManagementActionItems(records, metrics);
   }, [records, metrics]);
 
-  // Handle Google Login
+  // Handle Google Login (optional for private sheets)
   const handleLogin = async () => {
     setIsLoggingIn(true);
     try {
@@ -182,7 +214,7 @@ export default function App() {
       if (res) {
         setUser(res.user);
         if (dataSource.sourceType === 'google_sheets_live') {
-          fetchData(true);
+          fetchDataRef.current();
         }
       }
     } catch (err) {
@@ -202,33 +234,52 @@ export default function App() {
     }
   };
 
-  // Switch source type
+  // Switch source type and persist choice
   const handleSelectSourceType = (type: 'source_file' | 'google_sheets_live') => {
-    setDataSource((prev) => ({
-      ...prev,
-      sourceType: type,
-      autoRefreshCountdown: 60,
-    }));
+    setDataSource((prev) => {
+      const next = {
+        ...prev,
+        sourceType: type,
+        autoRefreshCountdown: AUTO_REFRESH_INTERVAL_SECONDS,
+      };
+      saveDataSourceConfig({
+        sourceType: next.sourceType,
+        spreadsheetId: next.spreadsheetId || '',
+        spreadsheetGid: next.spreadsheetGid || '0',
+        sheetName: next.sheetName || 'Data Penempatan Genset',
+      });
+      return next;
+    });
   };
 
-  // Connect custom Google Sheets ID
-  const handleConnectSheetsId = async (sheetId: string) => {
+  // Connect custom Google Sheets URL/ID via Public CSV without requiring login
+  const handleConnectSheetsId = async (rawInput: string) => {
+    const sheetId = extractSpreadsheetId(rawInput);
+    const gid = extractSpreadsheetGid(rawInput);
     const token = await getAccessToken();
-    if (!token) {
-      throw new Error('Harap masuk dengan Google terlebih dahulu.');
-    }
 
-    const result = await loadFromGoogleSheets(sheetId, token);
+    const result = await loadFromGoogleSheets(sheetId, token, gid);
+    const resolvedSheetName = result.sheetNames[0] || 'Google Sheets Public';
+
+    saveDataSourceConfig({
+      sourceType: 'google_sheets_live',
+      spreadsheetId: sheetId,
+      spreadsheetGid: gid,
+      sheetName: resolvedSheetName,
+    });
+
     setRecords(result.records);
     setDataSource((prev) => ({
       ...prev,
       sourceType: 'google_sheets_live',
       spreadsheetId: sheetId,
-      sheetName: result.sheetNames[0] || 'Sheet1',
+      spreadsheetGid: gid,
+      sheetName: resolvedSheetName,
       lastUpdated: new Date(),
+      isSyncing: false,
       isStale: false,
       error: null,
-      autoRefreshCountdown: 60,
+      autoRefreshCountdown: AUTO_REFRESH_INTERVAL_SECONDS,
     }));
   };
 
@@ -256,7 +307,7 @@ export default function App() {
         ...prev,
         overloadOnly: true,
         relokasiOnly: false,
-        status: 'ALL',
+        status: 'Operasi',
       }));
     } else if (key === 'RELOKASI') {
       setFilterState((prev) => ({
@@ -283,7 +334,7 @@ export default function App() {
       {/* Executive Header */}
       <Header
         dataSource={dataSource}
-        onRefresh={() => fetchData(true)}
+        onRefresh={() => fetchData()}
         onOpenSheetsModal={() => setIsSheetsModalOpen(true)}
         user={user}
         onLogin={handleLogin}
@@ -384,7 +435,9 @@ export default function App() {
 
           <div className="text-xs text-slate-500 flex items-center gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>Basis Data: <strong>{metrics.totalUnits} Unit</strong> ({metrics.totalCapacityKva.toLocaleString('id-ID')} kVA • {metrics.totalBebanOperasiKva.toLocaleString('id-ID')} kVA Beban)</span>
+            <span>
+              Basis Data: <strong>{metrics.totalUnits} Unit</strong> ({metrics.totalCapacityKva.toLocaleString('id-ID')} kVA • {metrics.totalBebanOperasiKva.toLocaleString('id-ID')} kVA Beban Operasi)
+            </span>
           </div>
         </div>
 
@@ -462,6 +515,7 @@ export default function App() {
         isOpen={isSheetsModalOpen}
         onClose={() => setIsSheetsModalOpen(false)}
         dataSource={dataSource}
+        metrics={metrics}
         user={user}
         onLogin={handleLogin}
         onSelectSourceType={handleSelectSourceType}

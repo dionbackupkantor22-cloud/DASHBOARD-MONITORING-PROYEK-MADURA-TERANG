@@ -4,9 +4,57 @@ import {
   ProviderMetric,
   RegionMetric,
   ManagementActionItem,
+  OverloadUnitSummary,
 } from '../types/dashboard';
 
 export const DEFAULT_SOURCE_PATH = '/assets/aistudio/Data_Penempatan_Genset_Mobile_f3030d1c';
+export const AUTO_REFRESH_INTERVAL_SECONDS = 30;
+const STORAGE_KEY_DATASOURCE = 'madura_terang_datasource_config_v1';
+
+export interface SavedDataSourceConfig {
+  sourceType: 'source_file' | 'google_sheets_live';
+  spreadsheetId: string;
+  spreadsheetGid: string;
+  sheetName: string;
+}
+
+export function loadSavedDataSourceConfig(): SavedDataSourceConfig {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DATASOURCE);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        sourceType: parsed.sourceType === 'google_sheets_live' && parsed.spreadsheetId ? 'google_sheets_live' : 'source_file',
+        spreadsheetId: parsed.spreadsheetId || '',
+        spreadsheetGid: parsed.spreadsheetGid || '0',
+        sheetName: parsed.sheetName || 'Data Penempatan Genset',
+      };
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return {
+    sourceType: 'source_file',
+    spreadsheetId: '',
+    spreadsheetGid: '0',
+    sheetName: 'Data Penempatan Genset',
+  };
+}
+
+export function saveDataSourceConfig(config: SavedDataSourceConfig): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_DATASOURCE, JSON.stringify(config));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+/**
+ * Single source of truth predicate for whether a unit's status is 'Operasi'.
+ */
+export function isOperasiStatus(status: string): boolean {
+  return (status || '').toLowerCase().includes('operasi');
+}
 
 /**
  * Extracts spreadsheet ID from either a raw ID or a full Google Sheets URL.
@@ -18,6 +66,18 @@ export function extractSpreadsheetId(input: string): string {
     return match[1];
   }
   return trimmed;
+}
+
+/**
+ * Extracts GID (sheet tab ID) from a Google Sheets URL if present.
+ */
+export function extractSpreadsheetGid(input: string): string {
+  const trimmed = input.trim();
+  const match = trimmed.match(/[?&#]gid=([0-9]+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return '0';
 }
 
 /**
@@ -181,7 +241,6 @@ export function processRawRows(matrix: string[][]): GensetRecord[] {
   }
 
   if (headerRowIndex === -1) {
-    // Default to row 0 if cannot identify
     headerRowIndex = 0;
   }
 
@@ -245,8 +304,30 @@ export function processRawRows(matrix: string[][]): GensetRecord[] {
     const bbmLiter = parseNum(getVal(colBbmLiter));
     const ulp = getVal(colUlp) || (noVal === '1' ? 'Belum Tiba' : 'Belum Ditentukan');
     const gardu = getVal(colGardu) || '-';
-    const pemilik = getVal(colPemilik) || (capacityKva >= 500 && parseInt(noVal, 10) <= 7 ? 'GENSET PLN' : 'GENSET ES');
+    const pemilik =
+      getVal(colPemilik) ||
+      (capacityKva >= 500 && parseInt(noVal, 10) <= 7 ? 'GENSET PLN' : 'GENSET ES');
     const status = statusVal || 'Operasi';
+
+    // Capture unheadered equipment/ATS column(s) between TINDAK LANJUT and TEAM
+    let atributPerangkat = '';
+    if (colTindakLanjut >= 0 && colTeam > colTindakLanjut + 1) {
+      const extraVals: string[] = [];
+      for (let c = colTindakLanjut + 1; c < colTeam; c++) {
+        const v = getVal(c);
+        if (v) extraVals.push(v);
+      }
+      atributPerangkat = extraVals.join(', ');
+    }
+
+    const rawTindakLanjut = getVal(colTindakLanjut);
+    const combinedTindakLanjut =
+      rawTindakLanjut && atributPerangkat
+        ? `${rawTindakLanjut} (${atributPerangkat})`
+        : rawTindakLanjut || atributPerangkat;
+
+    // Exact TEAM from spreadsheet without forcing 'UP3 MDR' on empty cells
+    const actualTeam = getVal(colTeam) || '-';
 
     const coords = getCoordinatesForGardu(ulp, gardu, noVal);
     const missingFields: string[] = [];
@@ -280,19 +361,20 @@ export function processRawRows(matrix: string[][]): GensetRecord[] {
       titikLokasiAwal: getVal(colLokasiAwal),
       titikLokasiBaru: getVal(colLokasiBaru),
       keterangan: getVal(colKeterangan),
-      tindakLanjut: getVal(colTindakLanjut),
-      team: getVal(colTeam) || 'UP3 MDR',
+      tindakLanjut: combinedTindakLanjut,
+      atributPerangkat,
+      team: actualTeam,
       coordinates: coords,
 
       // Backward compatibility fields
       volume: 1,
       penyedia: pemilik,
-      statusMobilisasi: status === 'Belum Tiba' ? 'Belum Tiba' : 'Tiba di Madura',
+      statusMobilisasi: status.toLowerCase().includes('belum tiba') ? 'Belum Tiba' : 'Tiba di Madura',
       lokasiPemasangan: gardu !== '-' ? `${ulp} (${gardu})` : ulp,
       wilayah: ulp,
       kodeGardu: gardu,
       statusInstalasi: status,
-      pelaksanaInstalasi: getVal(colTeam) || '-',
+      pelaksanaInstalasi: actualTeam,
       unitAsal: pemilik,
       hasDuplicateNo: false,
       missingFields,
@@ -312,7 +394,8 @@ export function processRawRows(matrix: string[][]): GensetRecord[] {
 }
 
 /**
- * Calculates executive KPI metrics from new dataset.
+ * Calculates executive KPI metrics strictly aligned with spreadsheet rows.
+ * Per confirmed rule: Load, BBM, and Overload (>=80%) are calculated strictly from 'Operasi' units.
  */
 export function calculateMetrics(records: GensetRecord[]): DashboardMetrics {
   const totalUnits = records.length;
@@ -331,13 +414,15 @@ export function calculateMetrics(records: GensetRecord[]): DashboardMetrics {
   let totalEstimasiBbmLiterJam = 0;
   let totalLoadingPersenSum = 0;
   let maxLoadingPersen = 0;
+  let maxLoadingGardu = '-';
   let unitOverloadCount = 0;
+  const overloadUnits: OverloadUnitSummary[] = [];
   let potensiRelokasiCount = 0;
   let tripOverCurrentCount = 0;
 
   records.forEach((r) => {
     const st = r.status.toLowerCase();
-    if (st.includes('operasi')) {
+    if (isOperasiStatus(r.status)) {
       unitOperasi++;
       unitOperasiKva += r.capacityKva;
       totalBebanOperasiKva += r.bebanKva;
@@ -345,9 +430,18 @@ export function calculateMetrics(records: GensetRecord[]): DashboardMetrics {
       totalLoadingPersenSum += r.persenBebanGenset;
       if (r.persenBebanGenset > maxLoadingPersen) {
         maxLoadingPersen = r.persenBebanGenset;
+        maxLoadingGardu = r.gardu !== '-' ? `${r.gardu} ${r.ulp}` : r.ulp;
       }
       if (r.persenBebanGenset >= 80) {
         unitOverloadCount++;
+        overloadUnits.push({
+          no: r.no,
+          gardu: r.gardu,
+          ulp: r.ulp,
+          persenBeban: r.persenBebanGenset,
+          bebanKva: r.bebanKva,
+          capacityKva: r.capacityKva,
+        });
       }
     } else if (st.includes('dilokasi') || st.includes('lokasi')) {
       unitDilokasi++;
@@ -369,6 +463,9 @@ export function calculateMetrics(records: GensetRecord[]): DashboardMetrics {
       tripOverCurrentCount++;
     }
   });
+
+  // Sort overload units descending by % load
+  overloadUnits.sort((a, b) => b.persenBeban - a.persenBeban);
 
   const rataRataLoadingPersen =
     unitOperasi > 0 ? +(totalLoadingPersenSum / unitOperasi).toFixed(1) : 0;
@@ -393,11 +490,11 @@ export function calculateMetrics(records: GensetRecord[]): DashboardMetrics {
     pm.unitCount++;
     pm.totalCapacityKva += r.capacityKva;
     const st = r.status.toLowerCase();
-    if (st.includes('operasi')) {
+    if (isOperasiStatus(r.status)) {
       pm.operasiCount++;
       pm.totalBebanKva += r.bebanKva;
-      pm.totalBbmLiterJam += r.estimasiBbmLiterJam;
-    } else if (st.includes('dilokasi')) {
+      pm.totalBbmLiterJam = +(pm.totalBbmLiterJam + r.estimasiBbmLiterJam).toFixed(2);
+    } else if (st.includes('dilokasi') || st.includes('lokasi')) {
       pm.dilokasiCount++;
     } else {
       pm.belumTibaCount++;
@@ -424,10 +521,10 @@ export function calculateMetrics(records: GensetRecord[]): DashboardMetrics {
     rm.unitCount++;
     rm.totalCapacityKva += r.capacityKva;
     const st = r.status.toLowerCase();
-    if (st.includes('operasi')) {
+    if (isOperasiStatus(r.status)) {
       rm.operasiCount++;
       rm.totalBebanKva += r.bebanKva;
-    } else if (st.includes('dilokasi')) {
+    } else if (st.includes('dilokasi') || st.includes('lokasi')) {
       rm.dilokasiCount++;
     } else {
       rm.belumTibaCount++;
@@ -463,10 +560,12 @@ export function calculateMetrics(records: GensetRecord[]): DashboardMetrics {
     unitBelumTiba,
     unitBelumTibaKva,
     totalBebanOperasiKva,
-    totalEstimasiBbmLiterJam: +totalEstimasiBbmLiterJam.toFixed(1),
+    totalEstimasiBbmLiterJam: +totalEstimasiBbmLiterJam.toFixed(2),
     rataRataLoadingPersen,
     maxLoadingPersen,
+    maxLoadingGardu,
     unitOverloadCount,
+    overloadUnits,
     potensiRelokasiCount,
     tripOverCurrentCount,
     realisasiOperasiPersen: totalUnits > 0 ? (unitOperasi / totalUnits) * 100 : 0,
@@ -483,7 +582,7 @@ export function calculateMetrics(records: GensetRecord[]): DashboardMetrics {
 }
 
 /**
- * Generates executive management action items based on actual data.
+ * Generates executive management action items dynamically from actual spreadsheet data.
  */
 export function generateManagementActionItems(
   records: GensetRecord[],
@@ -491,32 +590,42 @@ export function generateManagementActionItems(
 ): ManagementActionItem[] {
   const items: ManagementActionItem[] = [];
 
-  // Item 1: Trip Over Current (Sampang KC412)
+  // Item 1: Trip Over Current
   const tripRecords = records.filter((r) => r.keterangan.toLowerCase().includes('trip'));
   if (tripRecords.length > 0) {
+    const firstTrip = tripRecords[0];
     items.push({
       id: 'act-trip-overcurrent',
       category: 'Operasi & Keandalan',
       severity: 'Tinggi',
-      title: 'Penanganan Trip Over Current & Eksekusi Relokasi (SAMPANG KC412)',
-      description: `Genset No 8 (160 kVA) di Sampang KC412 mengalami 'TRIP OVER CURRENT' dengan beban 123 kVA (77%). Direncanakan relokasi ke gardu KC713 (beban 100 kVA, kapasitas gardu 250 kVA).`,
+      title: `Penanganan Trip Over Current & Eksekusi Relokasi (${firstTrip.ulp} ${firstTrip.gardu})`,
+      description: `Genset No ${firstTrip.no} (${firstTrip.genset}) di ${firstTrip.ulp} ${firstTrip.gardu} mengalami '${firstTrip.keterangan}' dengan beban ${firstTrip.bebanKva} kVA (${firstTrip.persenBebanGenset}%).${
+        firstTrip.relokasiGardu
+          ? ` Direncanakan relokasi ke gardu ${firstTrip.relokasiGardu} (beban ${firstTrip.relokasiBeban} kVA, kapasitas gardu ${firstTrip.relokasiKapasitasGardu} kVA).`
+          : ''
+      }`,
       affectedUnitsCount: tripRecords.length,
       unitIdentifiers: tripRecords.map((r) => `No ${r.no} (${r.gardu})`),
       recommendedAction:
-        'Lakukan inspeksi pemutus daya (MCCB), pembagian beban fasa, dan percepat penempatan genset pengganti ke gardu target KC713.',
-      mapsUrl: tripRecords[0]?.titikLokasiAwal,
+        'Lakukan inspeksi pemutus daya (MCCB), pembagian beban fasa, dan percepat penempatan genset pengganti ke gardu target relokasi.',
+      mapsUrl: firstTrip?.titikLokasiAwal,
     });
   }
 
-  // Item 2: Genset Overload Warning (>80% loading)
-  const overloadUnits = records.filter((r) => r.persenBebanGenset >= 80);
+  // Item 2: Genset Overload Warning (>=80% loading among 'Operasi' units)
+  const overloadUnits = records.filter(
+    (r) => isOperasiStatus(r.status) && r.persenBebanGenset >= 80
+  );
   if (overloadUnits.length > 0) {
+    const overloadSummaryText = overloadUnits
+      .map((r) => `${r.gardu} ${r.ulp} (${r.persenBebanGenset}%)`)
+      .join(', ');
     items.push({
       id: 'act-overload-warning',
       category: 'Operasi & Keandalan',
       severity: 'Tinggi',
-      title: `Pengawasan Pembebanan Kritis (${overloadUnits.length} Unit >80% Loading)`,
-      description: `Terdapat ${overloadUnits.length} unit genset dengan rasio beban di atas batas aman 80%: KF316 Ketapang (98%), KJ709 Waru (90%), KA0482 Pamekasan (84%), dan KA0026 Pamekasan (82%).`,
+      title: `Pengawasan Pembebanan Kritis Operasi (${overloadUnits.length} Unit >=80% Loading)`,
+      description: `Terdapat ${overloadUnits.length} unit genset berstatus Operasi dengan rasio beban di atas batas aman 80%: ${overloadSummaryText}.`,
       affectedUnitsCount: overloadUnits.length,
       unitIdentifiers: overloadUnits.map((r) => `No ${r.no}: ${r.gardu} (${r.persenBebanGenset}%)`),
       recommendedAction:
@@ -524,31 +633,39 @@ export function generateManagementActionItems(
     });
   }
 
-  // Item 3: Logistik 10 Unit Belum Tiba (Target Kedatangan)
+  // Item 3: Logistik Unit Belum Tiba (Dynamic Count & Breakdown)
   const unarrived = records.filter((r) => r.status.toLowerCase().includes('belum tiba'));
   if (unarrived.length > 0) {
+    const plnUnarrived = unarrived.filter((r) => r.pemilikGenset.toUpperCase().includes('PLN'));
+    const esUnarrived = unarrived.filter((r) => !r.pemilikGenset.toUpperCase().includes('PLN'));
     items.push({
       id: 'act-belum-tiba',
       category: 'Logistik & Kedatangan',
       severity: 'Sedang',
       title: `Monitoring Kedatangan ${unarrived.length} Unit Genset (${metrics.unitBelumTibaKva.toLocaleString('id-ID')} kVA)`,
-      description: `Sebanyak ${unarrived.length} unit genset (termasuk 600 kVA PLN dan 9 unit PT. ES kapasitas 300-350 kVA) tercatat belum tiba di lokasi, dengan target kedatangan 26 Oktober 2026.`,
+      description: `Sebanyak ${unarrived.length} unit genset (${plnUnarrived.length} unit PLN dan ${esUnarrived.length} unit ES dengan total kapasitas ${metrics.unitBelumTibaKva.toLocaleString('id-ID')} kVA) tercatat berstatus Belum Tiba di lokasi.`,
       affectedUnitsCount: unarrived.length,
       unitIdentifiers: unarrived.map((r) => `No ${r.no}: ${r.genset} -> ${r.ulp}`),
       recommendedAction:
-        'Koordinasikan jadwal penyeberangan fery Tanjung Perak - Madura dan pastikan kesiapan landasan gardu tujuan sebelum unit tiba.',
+        'Koordinasikan jadwal penyeberangan kapal fery Tanjung Perak - Madura dan pastikan kesiapan landasan gardu tujuan sebelum unit tiba.',
     });
   }
 
   // Item 4: Unit Dilokasi Siap Operasi
-  const atLocation = records.filter((r) => r.status.toLowerCase().includes('dilokasi'));
+  const atLocation = records.filter((r) => {
+    const st = r.status.toLowerCase();
+    return st.includes('dilokasi') || (st.includes('lokasi') && !isOperasiStatus(r.status));
+  });
   if (atLocation.length > 0) {
+    const locSummary = atLocation
+      .map((r) => `No ${r.no} (${r.genset} di ${r.ulp} ${r.gardu})`)
+      .join(' & ');
     items.push({
       id: 'act-dilokasi-commissioning',
       category: 'Operasi & Keandalan',
       severity: 'Sedang',
-      title: `Percepatan Komisioning 2 Unit Siap Operasi (WARU KJ709 & PAMEKASAN KA737)`,
-      description: `Genset No 16 (250 kVA di Waru KJ709) dan No 22 (300 kVA di Pamekasan KA737) telah terpasang di lokasi sejak 24-25 Okt 2026 namun status operasi belum aktif.`,
+      title: `Percepatan Komisioning ${atLocation.length} Unit Dilokasi Siap Operasi (${metrics.unitDilokasiKva.toLocaleString('id-ID')} kVA)`,
+      description: `Genset ${locSummary} telah berada di lokasi gardu namun status operasi belum aktif menyuplai beban.`,
       affectedUnitsCount: atLocation.length,
       unitIdentifiers: atLocation.map((r) => `No ${r.no} (${r.ulp} - ${r.gardu})`),
       recommendedAction:
@@ -564,9 +681,9 @@ export function generateManagementActionItems(
       category: 'Logistik & Kedatangan',
       severity: 'Info',
       title: `Manajemen Rantai Pasok BBM Solar (~${dailyLiters.toLocaleString('id-ID')} Liter/Hari)`,
-      description: `Operasional 20 unit genset saat ini mengonsumsi ${metrics.totalEstimasiBbmLiterJam.toLocaleString('id-ID')} Liter/jam, setara dengan ~${dailyLiters.toLocaleString('id-ID')} Liter per 24 jam operasi kontinu.`,
+      description: `Operasional aktif ${metrics.unitOperasi} unit genset saat ini mengonsumsi ${metrics.totalEstimasiBbmLiterJam.toLocaleString('id-ID')} Liter/jam, setara dengan ~${dailyLiters.toLocaleString('id-ID')} Liter per 24 jam operasi kontinu.`,
       affectedUnitsCount: metrics.unitOperasi,
-      unitIdentifiers: ['Seluruh Unit Operasi'],
+      unitIdentifiers: [`${metrics.unitOperasi} Unit Operasi Aktif`],
       recommendedAction:
         'Jadwalkan rute mobil tangki solar berkala per ULP (Pamekasan, Waru, Ketapang, Sampang, Sumenep) agar tangki harian genset tidak pernah di bawah 30%.',
     });
@@ -576,12 +693,19 @@ export function generateManagementActionItems(
 }
 
 /**
- * Loads data from default local source file.
+ * Loads data from default source file with strict cache-busting so updates are reflected immediately.
  */
 export async function loadFromSourceFile(): Promise<GensetRecord[]> {
-  const res = await fetch(DEFAULT_SOURCE_PATH, { cache: 'no-store' });
+  const cacheBustedUrl = `${DEFAULT_SOURCE_PATH}?t=${Date.now()}`;
+  const res = await fetch(cacheBustedUrl, {
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+    },
+  });
   if (!res.ok) {
-    throw new Error(`Gagal memuat file sumber: status ${res.status} ${res.statusText}`);
+    throw new Error(`Gagal memuat spreadsheet sumber: status ${res.status} ${res.statusText}`);
   }
   const text = await res.text();
   const rows = parseCsv(text);
@@ -589,24 +713,71 @@ export async function loadFromSourceFile(): Promise<GensetRecord[]> {
 }
 
 /**
- * Loads data from Google Sheets API v4 using OAuth access token.
+ * Loads data from Google Sheets automatically via Public CSV/GViz link WITHOUT requiring login.
+ * If accessToken is provided and public access fails, falls back to Google Sheets API v4.
  */
 export async function loadFromGoogleSheets(
   spreadsheetId: string,
-  accessToken: string,
+  accessToken?: string | null,
+  gid = '0',
   range = 'A1:Z100'
 ): Promise<{ records: GensetRecord[]; sheetNames: string[] }> {
-  const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`;
+  const cleanId = extractSpreadsheetId(spreadsheetId);
+  const cleanGid = gid || '0';
+  const timestamp = Date.now();
+
+  // 1. Try Public Google Visualization CSV Export first (Zero-Login Auto-Sync)
+  const publicUrls = [
+    `https://docs.google.com/spreadsheets/d/${cleanId}/gviz/tq?tqx=out:csv&gid=${cleanGid}&t=${timestamp}`,
+    `https://docs.google.com/spreadsheets/d/${cleanId}/export?format=csv&gid=${cleanGid}&t=${timestamp}`,
+  ];
+
+  for (const url of publicUrls) {
+    try {
+      const pubRes = await fetch(url, {
+        cache: 'no-store',
+      });
+      if (pubRes.ok) {
+        const csvText = await pubRes.text();
+        // Verify it's not an HTML sign-in page
+        if (
+          csvText &&
+          !csvText.trim().toLowerCase().startsWith('<!doctype html') &&
+          !csvText.trim().toLowerCase().startsWith('<html')
+        ) {
+          const rows = parseCsv(csvText);
+          const records = processRawRows(rows);
+          if (records.length > 0) {
+            return { records, sheetNames: [`GID:${cleanGid}`] };
+          }
+        }
+      }
+    } catch {
+      // Proceed to next endpoint or OAuth fallback
+    }
+  }
+
+  // 2. Fallback to Authenticated Google Sheets API v4 if accessToken is present
+  if (!accessToken) {
+    throw new Error(
+      'Gagal mengakses link Google Sheets secara publik. Pastikan pengaturan berbagi Google Sheets Anda disetel ke "Siapa saja yang memiliki link dapat melihat" (Anyone with the link can view).'
+    );
+  }
+
+  const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}?fields=sheets.properties`;
   const metaRes = await fetch(metaUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    cache: 'no-store',
   });
 
   if (!metaRes.ok) {
     if (metaRes.status === 401 || metaRes.status === 403) {
-      throw new Error('Sesi Google telah kedaluwarsa atau izin akses Google Sheets ditolak. Silakan login kembali.');
+      throw new Error(
+        'Spreadsheet tidak bersifat publik dan sesi izin Google telah kedaluwarsa. Ubah akses sheet menjadi "Siapa saja yang memiliki link" agar sinkron otomatis tanpa login.'
+      );
     }
     if (metaRes.status === 404) {
-      throw new Error(`Spreadsheet dengan ID "${spreadsheetId}" tidak ditemukan. Periksa kembali ID atau URL.`);
+      throw new Error(`Spreadsheet dengan ID "${cleanId}" tidak ditemukan. Periksa kembali URL Google Sheets.`);
     }
     const errData = await metaRes.json().catch(() => ({}));
     throw new Error(errData?.error?.message || `Gagal mengakses Google Sheets (${metaRes.status})`);
@@ -619,12 +790,13 @@ export async function loadFromGoogleSheets(
 
   const targetRange = range.includes('!') ? range : `'${sheetNames[0] || 'Sheet1'}'!A1:Z100`;
 
-  const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
+  const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}/values/${encodeURIComponent(
     targetRange
   )}?valueRenderOption=FORMATTED_VALUE`;
 
   const valuesRes = await fetch(valuesUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    cache: 'no-store',
   });
 
   if (!valuesRes.ok) {

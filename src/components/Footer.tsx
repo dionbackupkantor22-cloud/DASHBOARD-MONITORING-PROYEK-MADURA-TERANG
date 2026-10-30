@@ -21,20 +21,20 @@ export const Footer: React.FC = () => {
           <div className="space-y-1.5">
             <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
               <Lock className="h-4 w-4 text-slate-700" />
-              Keamanan Kredensial
+              Koneksi Tanpa Login Manual
             </span>
             <p className="text-[11px] leading-relaxed text-slate-500">
-              Autentikasi menggunakan Google Workspace OAuth 2.0 dengan prinsip hak akses terkecil (<em>spreadsheets.readonly</em>). Token akses disimpan eksklusif pada memori runtime (in-memory) dan tidak disimpan di local storage peramban.
+              Mendukung penarikan langsung via <strong>Link Publik Google Sheets</strong> tanpa mewajibkan login ulang setiap sesi, serta menyimpan konfigurasi sumber secara persisten.
             </p>
           </div>
 
           <div className="space-y-1.5">
             <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
               <Info className="h-4 w-4 text-blue-600" />
-              Siklus Sinkronisasi
+              Siklus Sinkronisasi Realtime
             </span>
             <p className="text-[11px] leading-relaxed text-slate-500">
-              Pembaruan data otomatis berkala setiap 60 detik dengan proteksi pencegahan permintaan bertumpuk (concurrency lock). Jika jaringan terputus, data cache terakhir tetap dipertahankan dengan indikator peringatan visual.
+              Pembaruan data otomatis berjalan setiap <strong>30 detik</strong> dan <strong>seketika saat tab dibuka kembali</strong> dengan proteksi anti-cache serta pencegahan permintaan bertumpuk (concurrency lock).
             </p>
           </div>
 

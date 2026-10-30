@@ -119,7 +119,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Countdown badge */}
               <div
                 className="ml-1 pl-2 border-l border-slate-700 text-[10px] text-slate-400 hidden lg:block"
-                title="Pembaruan otomatis data setiap 60 detik"
+                title="Pembaruan otomatis data setiap 30 detik dan saat tab dibuka kembali"
               >
                 Auto-sync: <span className="font-mono text-emerald-400">{dataSource.autoRefreshCountdown}s</span>
               </div>

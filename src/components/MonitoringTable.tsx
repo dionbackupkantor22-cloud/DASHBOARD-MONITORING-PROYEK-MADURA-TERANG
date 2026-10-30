@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
   Search,
-  Filter,
   Download,
   AlertTriangle,
   CheckCircle2,
@@ -11,11 +10,9 @@ import {
   X,
   FileSpreadsheet,
   MapPin,
-  Fuel,
-  Gauge,
-  RotateCw,
 } from 'lucide-react';
 import { GensetRecord, FilterState } from '../types/dashboard';
+import { isOperasiStatus } from '../services/dataService';
 
 interface MonitoringTableProps {
   records: GensetRecord[];
@@ -33,6 +30,20 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
   const [selectedRecord, setSelectedRecord] = useState<GensetRecord | null>(null);
   const [sortField, setSortField] = useState<keyof GensetRecord>('rowIndex');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Dynamic status counts from actual spreadsheet records
+  const statusCounts = useMemo(() => {
+    let operasi = 0;
+    let dilokasi = 0;
+    let belumTiba = 0;
+    records.forEach((r) => {
+      const st = r.status.toLowerCase();
+      if (isOperasiStatus(r.status)) operasi++;
+      else if (st.includes('dilokasi') || st.includes('lokasi')) dilokasi++;
+      else belumTiba++;
+    });
+    return { operasi, dilokasi, belumTiba };
+  }, [records]);
 
   // Distinct filter lists
   const distinctUlps = useMemo(() => {
@@ -60,6 +71,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
           r.status.toLowerCase().includes(q) ||
           r.keterangan.toLowerCase().includes(q) ||
           r.tindakLanjut.toLowerCase().includes(q) ||
+          r.atributPerangkat.toLowerCase().includes(q) ||
           r.team.toLowerCase().includes(q);
         if (!matchSearch) return false;
       }
@@ -79,8 +91,8 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
         return false;
       }
 
-      // Overload only (>80%)
-      if (filterState.overloadOnly && r.persenBebanGenset < 80) {
+      // Overload only (>=80% strictly on 'Operasi' units per confirmed rule)
+      if (filterState.overloadOnly && (!isOperasiStatus(r.status) || r.persenBebanGenset < 80)) {
         return false;
       }
 
@@ -101,8 +113,8 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
   const sortedRecords = useMemo(() => {
     const list = [...filteredRecords];
     list.sort((a, b) => {
-      let valA = a[sortField];
-      let valB = b[sortField];
+      const valA = a[sortField];
+      const valB = b[sortField];
 
       if (
         sortField === 'capacityKva' ||
@@ -152,7 +164,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
       'Beban Relokasi',
       'Pemilik Genset',
       'Keterangan',
-      'Tindak Lanjut',
+      'Tindak Lanjut / ATS',
       'Team',
       'Google Maps Awal',
       'Google Maps Baru',
@@ -200,7 +212,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
 
   const getStatusBadge = (status: string) => {
     const s = status.toLowerCase();
-    if (s.includes('operasi')) {
+    if (isOperasiStatus(status)) {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
           <CheckCircle2 className="h-3 w-3 text-emerald-600" />
@@ -224,8 +236,8 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
     );
   };
 
-  const getLoadingBadge = (pct: number) => {
-    if (pct >= 80) {
+  const getLoadingBadge = (pct: number, isOperasi: boolean) => {
+    if (pct >= 80 && isOperasi) {
       return (
         <span className="font-mono font-bold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
           {pct}%
@@ -265,7 +277,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
             Tabel Monitoring Penempatan Genset Mobile Madura
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Daftar lengkap 32 unit genset dengan parameter pembebanan (kVA/A), BBM (L/jam), gardu, dan koordinat Google Maps
+            Daftar lengkap {records.length} unit genset dengan parameter pembebanan (kVA/A), BBM (L/jam), gardu, tindak lanjut, tim, dan titik Google Maps
           </p>
         </div>
 
@@ -299,7 +311,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
             type="text"
             value={filterState.searchQuery}
             onChange={(e) => onUpdateFilter({ searchQuery: e.target.value })}
-            placeholder="Cari gardu, ULP, kapasitas, keterangan..."
+            placeholder="Cari gardu, ULP, kapasitas, ATS, tim, keterangan..."
             className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-600 focus:bg-white transition-all"
           />
           {filterState.searchQuery && (
@@ -312,17 +324,17 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
           )}
         </div>
 
-        {/* Status Filter */}
+        {/* Status Filter (Dynamic Counts) */}
         <div>
           <select
             value={filterState.status}
             onChange={(e) => onUpdateFilter({ status: e.target.value })}
             className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-600 cursor-pointer"
           >
-            <option value="ALL">Semua Status</option>
-            <option value="Operasi">Operasi (20)</option>
-            <option value="Dilokasi">Dilokasi (2)</option>
-            <option value="Belum Tiba">Belum Tiba (10)</option>
+            <option value="ALL">Semua Status ({records.length})</option>
+            <option value="Operasi">Operasi ({statusCounts.operasi})</option>
+            <option value="Dilokasi">Dilokasi ({statusCounts.dilokasi})</option>
+            <option value="Belum Tiba">Belum Tiba ({statusCounts.belumTiba})</option>
           </select>
         </div>
 
@@ -367,7 +379,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
                 ? 'bg-red-600 text-white border-red-700'
                 : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
             }`}
-            title="Filter unit dengan beban >= 80%"
+            title="Filter unit berstatus Operasi dengan beban >= 80%"
           >
             &gt;80% Beban
           </button>
@@ -394,7 +406,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
         </span>
         {filterState.overloadOnly && (
           <span className="text-red-700 font-semibold bg-red-50 px-2 py-0.5 rounded border border-red-200">
-            Mode Filter: Menampilkan genset pembebanan kritis (&gt;=80%)
+            Mode Filter: Menampilkan genset Operasi pembebanan kritis (&gt;=80%)
           </span>
         )}
       </div>
@@ -476,6 +488,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
 
               <th className="py-3 px-3">Pemilik</th>
               <th className="py-3 px-3">Keterangan / Relokasi</th>
+              <th className="py-3 px-3">Team</th>
               <th className="py-3 px-3 text-center">Peta</th>
               <th className="py-3 px-3 text-center w-12">Aksi</th>
             </tr>
@@ -484,7 +497,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
           <tbody className="divide-y divide-slate-100 bg-white">
             {sortedRecords.length === 0 ? (
               <tr>
-                <td colSpan={11} className="py-8 text-center text-slate-500">
+                <td colSpan={12} className="py-8 text-center text-slate-500">
                   Tidak ada data genset yang sesuai dengan kriteria filter saat ini.
                 </td>
               </tr>
@@ -492,7 +505,8 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
               sortedRecords.map((r) => {
                 const isSelected = selectedRecord?.id === r.id;
                 const isTrip = r.keterangan.toLowerCase().includes('trip');
-                const isOverload = r.persenBebanGenset >= 80;
+                const isOperasi = isOperasiStatus(r.status);
+                const isOverload = isOperasi && r.persenBebanGenset >= 80;
 
                 return (
                   <tr
@@ -552,7 +566,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
                     {/* % Beban */}
                     <td className="py-3 px-3 text-center">
                       {r.persenBebanGenset > 0 ? (
-                        getLoadingBadge(r.persenBebanGenset)
+                        getLoadingBadge(r.persenBebanGenset, isOperasi)
                       ) : (
                         <span className="text-slate-400 font-mono text-[11px]">0%</span>
                       )}
@@ -569,28 +583,44 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
 
                     {/* Pemilik */}
                     <td className="py-3 px-3 text-slate-800 font-medium">
-                      <span className="truncate block max-w-[100px]" title={r.pemilikGenset}>
+                      <span className="truncate block max-w-[120px]" title={r.pemilikGenset}>
                         {r.pemilikGenset}
                       </span>
                     </td>
 
-                    {/* Keterangan / Relokasi */}
+                    {/* Keterangan / Relokasi / ATS */}
                     <td className="py-3 px-3">
-                      {isTrip && (
-                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-300 mr-1">
-                          TRIP
-                        </span>
-                      )}
-                      {r.relokasiUlp && (
-                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-800 border border-purple-200">
-                          Ke {r.relokasiGardu || r.relokasiUlp}
-                        </span>
-                      )}
-                      {!isTrip && !r.relokasiUlp && r.keterangan && (
-                        <span className="text-slate-600 text-[11px]">{r.keterangan}</span>
-                      )}
-                      {!isTrip && !r.relokasiUlp && !r.keterangan && (
-                        <span className="text-slate-300 italic">-</span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {isTrip && (
+                          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-300">
+                            TRIP
+                          </span>
+                        )}
+                        {r.relokasiUlp && (
+                          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                            Ke {r.relokasiGardu || r.relokasiUlp}
+                          </span>
+                        )}
+                        {r.atributPerangkat && (
+                          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            {r.atributPerangkat}
+                          </span>
+                        )}
+                        {!isTrip && !r.relokasiUlp && r.keterangan && (
+                          <span className="text-slate-600 text-[11px]">{r.keterangan}</span>
+                        )}
+                        {!isTrip && !r.relokasiUlp && !r.keterangan && !r.atributPerangkat && (
+                          <span className="text-slate-300 italic">-</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Team */}
+                    <td className="py-3 px-3 font-mono text-[11px] text-slate-700">
+                      {r.team && r.team !== '-' ? (
+                        <span className="font-semibold text-slate-800">{r.team}</span>
+                      ) : (
+                        <span className="text-slate-300">-</span>
                       )}
                     </td>
 
@@ -659,8 +689,9 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
             {/* Modal Body */}
             <div className="p-5 space-y-4 text-xs">
               
-              {/* Warnings inside modal if trip or overload */}
-              {(selectedRecord.keterangan || selectedRecord.persenBebanGenset >= 80) && (
+              {/* Warnings inside modal if trip or operational overload */}
+              {(selectedRecord.keterangan ||
+                (isOperasiStatus(selectedRecord.status) && selectedRecord.persenBebanGenset >= 80)) && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-900 space-y-1">
                   <span className="font-bold flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-red-800">
                     <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
@@ -669,8 +700,8 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
                   {selectedRecord.keterangan && (
                     <p>• {selectedRecord.keterangan}</p>
                   )}
-                  {selectedRecord.persenBebanGenset >= 80 && (
-                    <p>• Pembebanan genset telah mencapai {selectedRecord.persenBebanGenset}%, melebihi batas rekomendasi 80%.</p>
+                  {isOperasiStatus(selectedRecord.status) && selectedRecord.persenBebanGenset >= 80 && (
+                    <p>• Pembebanan genset operasi telah mencapai {selectedRecord.persenBebanGenset}%, melebihi batas rekomendasi 80%.</p>
                   )}
                 </div>
               )}
@@ -699,7 +730,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
                 </div>
 
                 <div>
-                  <span className="text-slate-500 text-[11px] block">Beban Operasional:</span>
+                  <span className="text-slate-500 text-[11px] block">Beban Spreadsheet:</span>
                   <span className="font-mono font-bold text-emerald-700">
                     {selectedRecord.bebanKva} kVA ({selectedRecord.estimasiBebanAmpere} A)
                   </span>
@@ -727,9 +758,10 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
                 </div>
 
                 <div>
-                  <span className="text-slate-500 text-[11px] block">Tim Lapangan:</span>
+                  <span className="text-slate-500 text-[11px] block">Tim Lapangan & Perangkat:</span>
                   <span className="font-semibold text-slate-800">
-                    {selectedRecord.team || 'UP3 MDR'}
+                    {selectedRecord.team !== '-' ? selectedRecord.team : '-'}
+                    {selectedRecord.atributPerangkat ? ` • ${selectedRecord.atributPerangkat}` : ''}
                   </span>
                 </div>
               </div>
@@ -741,11 +773,13 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
                     Rencana Relokasi Target
                   </span>
                   <p>
-                    Target ULP: <strong>{selectedRecord.relokasiUlp}</strong> • Gardu: <strong>{selectedRecord.relokasiGardu}</strong>
+                    Target ULP: <strong>{selectedRecord.relokasiUlp}</strong> • Gardu: <strong>{selectedRecord.relokasiGardu || '-'}</strong>
                   </p>
-                  <p>
-                    Kapasitas Gardu Target: {selectedRecord.relokasiKapasitasGardu} kVA • Beban: {selectedRecord.relokasiBeban} kVA ({selectedRecord.relokasiPersenBeban}%)
-                  </p>
+                  {selectedRecord.relokasiKapasitasGardu > 0 && (
+                    <p>
+                      Kapasitas Gardu Target: {selectedRecord.relokasiKapasitasGardu} kVA • Beban: {selectedRecord.relokasiBeban} kVA ({selectedRecord.relokasiPersenBeban}%)
+                    </p>
+                  )}
                   {selectedRecord.titikLokasiBaru && (
                     <a
                       href={selectedRecord.titikLokasiBaru}

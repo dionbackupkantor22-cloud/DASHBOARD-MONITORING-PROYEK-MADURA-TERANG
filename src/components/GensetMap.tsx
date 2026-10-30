@@ -75,9 +75,10 @@ export const GensetMap: React.FC<GensetMapProps> = ({ records, onSelectRecord })
   }, [records]);
 
   const getMarkerColor = (r: GensetRecord) => {
+    const isOperasi = r.status.toLowerCase().includes('operasi');
     if (r.keterangan.toLowerCase().includes('trip')) return '#ef4444'; // Red
-    if (r.persenBebanGenset >= 80) return '#ea580c'; // Orange
-    if (r.status.toLowerCase().includes('operasi')) return '#059669'; // Emerald
+    if (isOperasi && r.persenBebanGenset >= 80) return '#ea580c'; // Orange (Operasi Overload)
+    if (isOperasi) return '#059669'; // Emerald
     if (r.status.toLowerCase().includes('dilokasi')) return '#2563eb'; // Blue
     return '#f59e0b'; // Amber
   };
@@ -436,7 +437,7 @@ export const GensetMap: React.FC<GensetMapProps> = ({ records, onSelectRecord })
             const color = getMarkerColor(record);
             const isSelected = selectedRecord?.id === record.id;
             const isTrip = record.keterangan.toLowerCase().includes('trip');
-            const isOverload = record.persenBebanGenset >= 80;
+            const isOverload = record.status.toLowerCase().includes('operasi') && record.persenBebanGenset >= 80;
 
             // Percentage positioning relative to SVG width/height
             const leftPct = (pos.x / SVG_WIDTH) * 100;
@@ -583,7 +584,8 @@ export const GensetMap: React.FC<GensetMapProps> = ({ records, onSelectRecord })
             <div className="bg-white p-2.5 rounded-lg border border-slate-200">
               <span className="text-slate-500 text-[10px] block">Pelaksana & Tim:</span>
               <span className="font-semibold text-slate-800 mt-0.5 block truncate">
-                {selectedRecord.team || 'UP3 MDR'}
+                {selectedRecord.team !== '-' ? selectedRecord.team : '-'}
+                {selectedRecord.atributPerangkat ? ` (${selectedRecord.atributPerangkat})` : ''}
               </span>
             </div>
           </div>
