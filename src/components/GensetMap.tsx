@@ -75,11 +75,12 @@ export const GensetMap: React.FC<GensetMapProps> = ({ records, onSelectRecord })
   }, [records]);
 
   const getMarkerColor = (r: GensetRecord) => {
-    const isOperasi = r.status.toLowerCase().includes('operasi');
+    const s = r.status.toLowerCase();
+    const isOperasi = s.includes('operasi');
     if (r.keterangan.toLowerCase().includes('trip')) return '#ef4444'; // Red
     if (isOperasi && r.persenBebanGenset >= 80) return '#ea580c'; // Orange (Operasi Overload)
     if (isOperasi) return '#059669'; // Emerald
-    if (r.status.toLowerCase().includes('dilokasi')) return '#2563eb'; // Blue
+    if (s.includes('dilokasi') || s.includes('di lokasi')) return '#2563eb'; // Blue
     return '#f59e0b'; // Amber
   };
 
@@ -419,7 +420,7 @@ export const GensetMap: React.FC<GensetMapProps> = ({ records, onSelectRecord })
             </div>
             <div className="flex items-center gap-1.5 text-blue-800">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block shadow-xs"></span>
-              <span>Dilokasi Siap ({records.filter((r) => r.status.toLowerCase().includes('dilokasi')).length})</span>
+              <span>Di Lokasi ({records.filter((r) => r.status.toLowerCase().includes('dilokasi') || r.status.toLowerCase().includes('di lokasi')).length})</span>
             </div>
             <div className="flex items-center gap-1.5 text-amber-800">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block shadow-xs"></span>

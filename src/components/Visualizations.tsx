@@ -38,7 +38,7 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
       description: 'Genset terhubung ke gardu dan aktif menyuplai daya konsumen.',
     },
     {
-      label: 'Dilokasi',
+      label: 'Di lokasi',
       count: metrics.unitDilokasi,
       kva: metrics.unitDilokasiKva,
       color: '#2563eb', // blue-600

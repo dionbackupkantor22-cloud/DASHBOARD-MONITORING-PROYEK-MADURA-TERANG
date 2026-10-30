@@ -1,6 +1,6 @@
 {
-  "summary":  "Rencana implementasi untuk menyelaraskan seluruh perhitungan data antara spreadsheet sumber dan dashboard serta mengaktifkan sinkronisasi otomatis realtime setiap 30 detik dan saat tab browser dibuka kembali tanpa memerlukan login manual.",
-  "updatedAt":  "2026-10-30T02:31:58.551125491Z",
+  "summary":  "Rencana implementasi integrasi langsung 3 sheet (DATA, DASHBOARD, dan REGU) dari Google Sheets resmi Proyek Madura Terang (1NUXMaWlM0pvqE036ke3tDaO2GX6nFO_-d961dar5FNM) dengan penyelarasan rumus 100% dan auto-sync setiap 30 detik.",
+  "updatedAt":  "2026-10-30T03:09:21.996724140Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

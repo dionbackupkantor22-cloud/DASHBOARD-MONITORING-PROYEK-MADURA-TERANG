@@ -146,21 +146,10 @@ export const ManagementAttention: React.FC<ManagementAttentionProps> = ({
       {/* Summary Audit Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
         <div>
-          <span className="text-slate-500 block text-[11px]">Trip Over Current:</span>
+          <span className="text-slate-500 block text-[11px]">Beban Kritis (&gt;=80%):</span>
           <span className="font-bold text-red-700 font-mono text-sm flex items-center gap-1">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            {metrics.tripOverCurrentCount} Unit (KC412)
-          </span>
-          <span className="text-[10px] text-slate-500 block">
-            Rencana relokasi ke KC713
-          </span>
-        </div>
-
-        <div>
-          <span className="text-slate-500 block text-[11px]">Beban Kritis Operasi (&gt;=80%):</span>
-          <span className="font-bold text-orange-700 font-mono text-sm flex items-center gap-1">
             <Gauge className="h-3.5 w-3.5" />
-            {metrics.unitOverloadCount} Unit
+            {metrics.unitOverloadCount} Unit Operasi
           </span>
           <span className="text-[10px] text-slate-500 block">
             Max {metrics.maxLoadingPersen}% di {metrics.maxLoadingGardu}
@@ -168,24 +157,35 @@ export const ManagementAttention: React.FC<ManagementAttentionProps> = ({
         </div>
 
         <div>
-          <span className="text-slate-500 block text-[11px]">Genset Belum Tiba:</span>
-          <span className="font-bold text-amber-700 font-mono text-sm flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" />
-            {metrics.unitBelumTiba} Unit
+          <span className="text-slate-500 block text-[11px]">Di Lokasi Siap Operasi:</span>
+          <span className="font-bold text-blue-700 font-mono text-sm flex items-center gap-1">
+            <MapPin className="h-3.5 w-3.5" />
+            {metrics.unitDilokasi} Unit ({metrics.unitDilokasiKva} kVA)
           </span>
           <span className="text-[10px] text-slate-500 block">
-            Kapasitas {metrics.unitBelumTibaKva.toLocaleString('id-ID')} kVA
+            Beban trafo {metrics.unitDilokasiBebanKva} kVA
           </span>
         </div>
 
         <div>
-          <span className="text-slate-500 block text-[11px]">Konsumsi Solar:</span>
-          <span className="font-bold text-blue-700 font-mono text-sm flex items-center gap-1">
-            <Fuel className="h-3.5 w-3.5" />
-            {metrics.totalEstimasiBbmLiterJam} L/jam
+          <span className="text-slate-500 block text-[11px]">Genset Belum Tiba:</span>
+          <span className="font-bold text-amber-700 font-mono text-sm flex items-center gap-1">
+            <Clock className="h-3.5 w-3.5" />
+            {metrics.unitBelumTiba} Unit ({metrics.unitBelumTibaKva} kVA)
           </span>
           <span className="text-[10px] text-slate-500 block">
-            ~{Math.round(metrics.totalEstimasiBbmLiterJam * 24).toLocaleString('id-ID')} Liter/hari
+            Beban trafo {metrics.unitBelumTibaBebanKva} kVA
+          </span>
+        </div>
+
+        <div>
+          <span className="text-slate-500 block text-[11px]">Total Estimasi BBM:</span>
+          <span className="font-bold text-emerald-700 font-mono text-sm flex items-center gap-1">
+            <Fuel className="h-3.5 w-3.5" />
+            {metrics.totalEstimasiBbmAllJam.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L/jam
+          </span>
+          <span className="text-[10px] text-slate-500 block">
+            Operasi: {metrics.unitOperasiBbmJam.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L/jam
           </span>
         </div>
       </div>

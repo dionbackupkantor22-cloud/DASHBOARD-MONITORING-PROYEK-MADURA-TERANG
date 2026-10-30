@@ -6,9 +6,11 @@ import {
   ManagementActionItem,
   DataSourceState,
   FilterState,
+  ReguSheetData,
 } from './types/dashboard';
 import {
   AUTO_REFRESH_INTERVAL_SECONDS,
+  DEFAULT_SPREADSHEET_ID,
   loadFromSourceFile,
   loadFromGoogleSheets,
   calculateMetrics,
@@ -22,10 +24,12 @@ import { initAuth, googleSignIn, logout, getAccessToken } from './services/fireb
 import { Header } from './components/Header';
 import { ExecutiveSummaryBanner } from './components/ExecutiveSummaryBanner';
 import { KpiCards } from './components/KpiCards';
+import { DashboardRecapTables } from './components/DashboardRecapTables';
 import { Visualizations } from './components/Visualizations';
 import { GensetMap } from './components/GensetMap';
 import { ManagementAttention } from './components/ManagementAttention';
 import { MonitoringTable } from './components/MonitoringTable';
+import { ReguMaterialSection } from './components/ReguMaterialSection';
 import { SheetsConnectionModal } from './components/SheetsConnectionModal';
 import { Footer } from './components/Footer';
 import {
@@ -34,6 +38,7 @@ import {
   TableProperties,
   Layers,
   Navigation,
+  Users,
 } from 'lucide-react';
 
 export default function App() {
@@ -41,21 +46,23 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
 
-  // Active view tab
-  const [activeTab, setActiveTab] = useState<'overview' | 'map' | 'attention' | 'table' | 'all'>('overview');
+  // Active view tab (Includes Sheet DASHBOARD Recap, Sheet DATA Table, Sheet REGU Table, Map, Attention, All)
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'table' | 'regu' | 'map' | 'attention' | 'all'
+  >('overview');
 
   // Sheets modal state
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState<boolean>(false);
 
-  // Load persisted data source config so no manual input is required on reload
+  // Load persisted data source config (defaults directly to Google Sheets ID 1NUXMaWlM0pvqE036ke3tDaO2GX6nFO_-d961dar5FNM)
   const initialConfig = useMemo(() => loadSavedDataSourceConfig(), []);
 
   // Data Source & Sync State
   const [dataSource, setDataSource] = useState<DataSourceState>({
     sourceType: initialConfig.sourceType,
-    spreadsheetId: initialConfig.spreadsheetId,
-    spreadsheetGid: initialConfig.spreadsheetGid,
-    sheetName: initialConfig.sheetName,
+    spreadsheetId: initialConfig.spreadsheetId || DEFAULT_SPREADSHEET_ID,
+    spreadsheetGid: initialConfig.spreadsheetGid || '0',
+    sheetName: initialConfig.sheetName || 'Google Sheets (DATA, DASHBOARD, REGU)',
     lastUpdated: null,
     isSyncing: false,
     isStale: false,
@@ -74,8 +81,19 @@ export default function App() {
     team: 'ALL',
   });
 
-  // Records & Cached Records
+  // Records from Sheet DATA (gid=0) & Sheet REGU (gid=1442113655)
   const [records, setRecords] = useState<GensetRecord[]>([]);
+  const [reguData, setReguData] = useState<ReguSheetData>({
+    rows: [],
+    totals: {
+      totalA3csMeter: 320,
+      totalSkat150Bh: 288,
+      totalGroundingSet: 27,
+      totalRows: 27,
+      totalWithAts: 10,
+    },
+  });
+
   const isFetchingRef = useRef<boolean>(false);
 
   // Initialize Auth on mount
@@ -94,7 +112,7 @@ export default function App() {
     };
   }, []);
 
-  // Fetch data function (zero-login public Google Sheets CSV or cache-busted source file)
+  // Fetch data across all 3 sheets (DATA, DASHBOARD, REGU)
   const fetchData = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
@@ -107,20 +125,29 @@ export default function App() {
 
     try {
       let loadedRecords: GensetRecord[] = [];
+      let loadedRegu: ReguSheetData | null = null;
 
-      if (dataSource.sourceType === 'google_sheets_live' && dataSource.spreadsheetId) {
+      if (dataSource.sourceType === 'google_sheets_live') {
+        const sheetId = dataSource.spreadsheetId || DEFAULT_SPREADSHEET_ID;
         const token = await getAccessToken();
         const result = await loadFromGoogleSheets(
-          dataSource.spreadsheetId,
+          sheetId,
           token,
           dataSource.spreadsheetGid || '0'
         );
         loadedRecords = result.records;
+        loadedRegu = result.reguData;
       } else {
-        loadedRecords = await loadFromSourceFile();
+        const result = await loadFromSourceFile();
+        loadedRecords = result.records;
+        loadedRegu = result.reguData;
       }
 
       setRecords(loadedRecords);
+      if (loadedRegu) {
+        setReguData(loadedRegu);
+      }
+
       setDataSource((prev) => ({
         ...prev,
         isSyncing: false,
@@ -155,13 +182,12 @@ export default function App() {
     fetchData();
   }, [fetchData]);
 
-  // 30-Second Auto Refresh Interval (cleanly separated from state updater)
+  // 30-Second Auto Refresh Interval
   useEffect(() => {
     const timer = setInterval(() => {
       setDataSource((prev) => {
         if (prev.isSyncing) return prev;
         if (prev.autoRefreshCountdown <= 1) {
-          // Trigger fetch asynchronously outside the state transition
           queueMicrotask(() => {
             fetchDataRef.current();
           });
@@ -197,16 +223,16 @@ export default function App() {
     };
   }, []);
 
-  // Calculated Metrics & Action Items
+  // Calculated Metrics (including exact Tab DASHBOARD 3 Recap Tables) & Action Items
   const metrics = useMemo<DashboardMetrics>(() => {
     return calculateMetrics(records);
   }, [records]);
 
   const actionItems = useMemo<ManagementActionItem[]>(() => {
-    return generateManagementActionItems(records, metrics);
-  }, [records, metrics]);
+    return generateManagementActionItems(records, metrics, reguData);
+  }, [records, metrics, reguData]);
 
-  // Handle Google Login (optional for private sheets)
+  // Handle Google Login
   const handleLogin = async () => {
     setIsLoggingIn(true);
     try {
@@ -240,13 +266,14 @@ export default function App() {
       const next = {
         ...prev,
         sourceType: type,
+        spreadsheetId: prev.spreadsheetId || DEFAULT_SPREADSHEET_ID,
         autoRefreshCountdown: AUTO_REFRESH_INTERVAL_SECONDS,
       };
       saveDataSourceConfig({
         sourceType: next.sourceType,
-        spreadsheetId: next.spreadsheetId || '',
+        spreadsheetId: next.spreadsheetId || DEFAULT_SPREADSHEET_ID,
         spreadsheetGid: next.spreadsheetGid || '0',
-        sheetName: next.sheetName || 'Data Penempatan Genset',
+        sheetName: next.sheetName || 'Google Sheets (DATA, DASHBOARD, REGU)',
       });
       return next;
     });
@@ -259,7 +286,7 @@ export default function App() {
     const token = await getAccessToken();
 
     const result = await loadFromGoogleSheets(sheetId, token, gid);
-    const resolvedSheetName = result.sheetNames[0] || 'Google Sheets Public';
+    const resolvedSheetName = result.sheetNames.join(', ') || 'Google Sheets Live';
 
     saveDataSourceConfig({
       sourceType: 'google_sheets_live',
@@ -269,6 +296,7 @@ export default function App() {
     });
 
     setRecords(result.records);
+    setReguData(result.reguData);
     setDataSource((prev) => ({
       ...prev,
       sourceType: 'google_sheets_live',
@@ -358,9 +386,9 @@ export default function App() {
           onFilterQuickStatus={handleQuickStatusFilter}
         />
 
-        {/* Tab Navigation Controls */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3 gap-3">
-          <div className="flex items-center gap-1.5 p-1 bg-white rounded-xl border border-slate-200 shadow-2xs self-start sm:self-auto overflow-x-auto max-w-full">
+        {/* Tab Navigation Controls across all 3 Sheets */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-slate-200 pb-3 gap-3">
+          <div className="flex items-center gap-1.5 p-1 bg-white rounded-xl border border-slate-200 shadow-2xs self-start lg:self-auto overflow-x-auto max-w-full">
             
             <button
               onClick={() => setActiveTab('overview')}
@@ -371,7 +399,37 @@ export default function App() {
               }`}
             >
               <LayoutDashboard className="h-4 w-4" />
-              <span>Ringkasan & Visualisasi</span>
+              <span>Sheet DASHBOARD &amp; Visualisasi</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('table')}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                activeTab === 'table'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <TableProperties className="h-4 w-4 text-emerald-600" />
+              <span>Sheet DATA (32 Genset)</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 text-emerald-900 font-mono font-bold">
+                {records.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('regu')}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                activeTab === 'regu'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Users className="h-4 w-4 text-blue-600" />
+              <span>Sheet REGU &amp; Material</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 text-blue-900 font-mono font-bold">
+                {reguData.totals.totalRows}
+              </span>
             </button>
 
             <button
@@ -383,8 +441,8 @@ export default function App() {
               }`}
             >
               <Navigation className="h-4 w-4 text-emerald-500" />
-              <span>Peta Lokasi Genset</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 text-emerald-900 font-mono font-bold">
+              <span>Peta Lokasi</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-700 font-mono">
                 {records.length} Titik
               </span>
             </button>
@@ -405,21 +463,6 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveTab('table')}
-              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                activeTab === 'table'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <TableProperties className="h-4 w-4 text-emerald-600" />
-              <span>Tabel Monitoring</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-700 font-mono">
-                {records.length}
-              </span>
-            </button>
-
-            <button
               onClick={() => setActiveTab('all')}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
                 activeTab === 'all'
@@ -428,7 +471,7 @@ export default function App() {
               }`}
             >
               <Layers className="h-4 w-4" />
-              <span>Semua Tampilan</span>
+              <span>Semua 3 Sheet</span>
             </button>
 
           </div>
@@ -436,14 +479,24 @@ export default function App() {
           <div className="text-xs text-slate-500 flex items-center gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
             <span>
-              Basis Data: <strong>{metrics.totalUnits} Unit</strong> ({metrics.totalCapacityKva.toLocaleString('id-ID')} kVA • {metrics.totalBebanOperasiKva.toLocaleString('id-ID')} kVA Beban Operasi)
+              Total: <strong>{metrics.totalUnits} Unit</strong> ({metrics.totalCapacityKva.toLocaleString('id-ID')} kVA • Beban Trafo: {metrics.totalBebanTrafoAllKva.toLocaleString('id-ID')} kVA • BBM: {metrics.totalEstimasiBbmAllJam.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L/jam)
             </span>
           </div>
         </div>
 
-        {/* Tab 1: Overview & Visualizations */}
+        {/* Tab 1: Sheet DASHBOARD Recap Tables, Map & Visualizations */}
         {(activeTab === 'overview' || activeTab === 'all') && (
           <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Exact 3 Summary Tables from Sheet DASHBOARD (gid=164028602) */}
+            <DashboardRecapTables
+              recap={metrics.dashboardRecap}
+              onSelectStatus={(s) => handleQuickStatusFilter(s)}
+              onSelectUlp={(u) => {
+                handleUpdateFilter({ ulp: u });
+                setActiveTab('table');
+              }}
+            />
+
             {/* Prominent Map view in Overview */}
             <GensetMap
               records={records}
@@ -470,7 +523,26 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 2: Dedicated Map View */}
+        {/* Tab 2: Detailed Monitoring Table (Sheet DATA gid=0) */}
+        {(activeTab === 'table' || activeTab === 'all') && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <MonitoringTable
+              records={records}
+              filterState={filterState}
+              onUpdateFilter={handleUpdateFilter}
+              onResetFilter={handleResetFilter}
+            />
+          </div>
+        )}
+
+        {/* Tab 3: Sheet REGU & Material Instalasi (gid=1442113655) */}
+        {(activeTab === 'regu' || activeTab === 'all') && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <ReguMaterialSection reguData={reguData} />
+          </div>
+        )}
+
+        {/* Tab 4: Dedicated Map View */}
         {activeTab === 'map' && (
           <div className="space-y-6 animate-in fade-in duration-200">
             <GensetMap
@@ -482,7 +554,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 3: Management Attention & Action Items */}
+        {/* Tab 5: Management Attention & Action Items */}
         {(activeTab === 'attention' || activeTab === 'all') && (
           <div className="space-y-6 animate-in fade-in duration-200">
             <ManagementAttention
@@ -492,18 +564,6 @@ export default function App() {
                 handleUpdateFilter({ searchQuery: unitNo });
                 setActiveTab('table');
               }}
-            />
-          </div>
-        )}
-
-        {/* Tab 4: Detailed Monitoring Table */}
-        {(activeTab === 'table' || activeTab === 'all') && (
-          <div className="space-y-6 animate-in fade-in duration-200">
-            <MonitoringTable
-              records={records}
-              filterState={filterState}
-              onUpdateFilter={handleUpdateFilter}
-              onResetFilter={handleResetFilter}
             />
           </div>
         )}

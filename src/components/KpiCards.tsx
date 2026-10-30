@@ -5,10 +5,6 @@ import {
   Clock,
   Gauge,
   Fuel,
-  TrendingUp,
-  AlertTriangle,
-  RotateCw,
-  Building2,
   MapPin,
 } from 'lucide-react';
 import { DashboardMetrics } from '../types/dashboard';
@@ -22,13 +18,19 @@ export const KpiCards: React.FC<KpiCardsProps> = ({
   metrics,
   onFilterQuickStatus,
 }) => {
+  const formatBbm = (val: number) =>
+    val.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   return (
     <div className="space-y-4">
-      {/* Primary KPI Grid (6 Top Cards) */}
+      {/* Primary KPI Grid (6 Top Cards - 100% Synced with Tab DASHBOARD) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         
-        {/* Card 1: Total Unit Genset */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow transition-shadow">
+        {/* Card 1: Total Unit Genset & Kapasitas (32 Unit / 10.210 kVA) */}
+        <div
+          onClick={() => onFilterQuickStatus?.('ALL')}
+          className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow transition-all cursor-pointer"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
               Total Genset
@@ -44,22 +46,22 @@ export const KpiCards: React.FC<KpiCardsProps> = ({
             <span className="text-xs font-medium text-slate-500">Unit</span>
           </div>
           <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
-            <span>Daya Terpasang:</span>
-            <span className="font-semibold text-slate-800 font-mono">
+            <span>Total Kapasitas:</span>
+            <span className="font-semibold text-slate-900 font-mono">
               {metrics.totalCapacityKva.toLocaleString('id-ID')} kVA
             </span>
           </div>
         </div>
 
-        {/* Card 2: Unit Beroperasi Aktif */}
+        {/* Card 2: Unit Operasi (29 Unit / 8.960 kVA) */}
         <div
           onClick={() => onFilterQuickStatus?.('Operasi')}
           className="bg-white rounded-xl border border-emerald-200 p-4 shadow-sm hover:shadow hover:border-emerald-400 transition-all cursor-pointer group"
-          title="Klik untuk memfilter daftar genset yang telah aktif beroperasi"
+          title="Klik untuk memfilter 29 unit genset berstatus Operasi"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wider">
-              Operasi Aktif
+              Operasi
             </span>
             <div className="p-2 bg-emerald-100/70 text-emerald-800 rounded-lg group-hover:bg-emerald-200 transition-colors">
               <CheckCircle2 className="h-4 w-4" />
@@ -77,18 +79,18 @@ export const KpiCards: React.FC<KpiCardsProps> = ({
             </span>
           </div>
           <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
-            <span>Kapasitas Operasi:</span>
+            <span>Kapasitas:</span>
             <span className="font-semibold text-emerald-700 font-mono">
-              {metrics.unitOperasiKva.toLocaleString('id-ID')} kVA ({metrics.realisasiKapasitasOperasiPersen.toFixed(1)}%)
+              {metrics.unitOperasiKva.toLocaleString('id-ID')} kVA
             </span>
           </div>
         </div>
 
-        {/* Card 3: Beban Riil Tersuplai */}
+        {/* Card 3: Total Beban Trafo (4.908 kVA Total | 4.531 kVA Operasi) */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow transition-shadow">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Beban Tersuplai
+              Beban Trafo
             </span>
             <div className="p-2 bg-blue-50 rounded-lg text-blue-700">
               <Gauge className="h-4 w-4" />
@@ -96,51 +98,51 @@ export const KpiCards: React.FC<KpiCardsProps> = ({
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
             <span className="text-3xl font-bold tracking-tight text-blue-700 font-mono">
-              {metrics.totalBebanOperasiKva.toLocaleString('id-ID')}
+              {metrics.totalBebanTrafoAllKva.toLocaleString('id-ID')}
             </span>
             <span className="text-xs font-semibold text-blue-600">kVA</span>
           </div>
           <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
-            <span>Rata-rata Loading:</span>
-            <span className="font-semibold text-slate-800 font-mono">
-              {metrics.rataRataLoadingPersen}% (Max: {metrics.maxLoadingPersen}%)
+            <span>Beban Operasi:</span>
+            <span className="font-semibold text-emerald-700 font-mono">
+              {metrics.unitOperasiBebanKva.toLocaleString('id-ID')} kVA ({metrics.rataRataLoadingPersen}%)
             </span>
           </div>
         </div>
 
-        {/* Card 4: Konsumsi BBM Solar */}
+        {/* Card 4: Estimasi Konsumsi BBM / Jam (1.731,54 L/jam Total | 1.598,54 Operasi) */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow transition-shadow">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Konsumsi BBM
+              Estimasi BBM / Jam
             </span>
             <div className="p-2 bg-amber-50 rounded-lg text-amber-700">
               <Fuel className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
-            <span className="text-3xl font-bold tracking-tight text-amber-700 font-mono">
-              {metrics.totalEstimasiBbmLiterJam.toLocaleString('id-ID')}
+            <span className="text-2xl font-bold tracking-tight text-amber-700 font-mono">
+              {formatBbm(metrics.totalEstimasiBbmAllJam)}
             </span>
             <span className="text-xs font-medium text-slate-500">L/jam</span>
           </div>
           <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
-            <span>Estimasi Harian:</span>
+            <span>BBM Operasi:</span>
             <span className="font-semibold text-slate-800 font-mono">
-              ~{Math.round(metrics.totalEstimasiBbmLiterJam * 24).toLocaleString('id-ID')} L/hari
+              {formatBbm(metrics.unitOperasiBbmJam)} L/jam
             </span>
           </div>
         </div>
 
-        {/* Card 5: Dilokasi Siap Operasi */}
+        {/* Card 5: Di lokasi (2 Unit / 900 kVA / Beban 265 kVA / BBM 93,49) */}
         <div
-          onClick={() => onFilterQuickStatus?.('Dilokasi')}
+          onClick={() => onFilterQuickStatus?.('Di lokasi')}
           className="bg-white rounded-xl border border-blue-200 p-4 shadow-sm hover:shadow hover:border-blue-400 transition-all cursor-pointer group"
-          title="Klik untuk memfilter unit yang telah tiba di gardu dan siap operasi"
+          title="Klik untuk memfilter unit genset berstatus Di lokasi"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-blue-800 uppercase tracking-wider">
-              Dilokasi Siap
+              Di Lokasi
             </span>
             <div className="p-2 bg-blue-50 text-blue-700 rounded-lg group-hover:bg-blue-100 transition-colors">
               <MapPin className="h-4 w-4" />
@@ -151,25 +153,22 @@ export const KpiCards: React.FC<KpiCardsProps> = ({
               {metrics.unitDilokasi}
             </span>
             <span className="text-xs font-medium text-slate-500">
-              / {metrics.totalUnits} Unit
-            </span>
-            <span className="ml-auto text-xs font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-              {((metrics.unitDilokasi / (metrics.totalUnits || 1)) * 100).toFixed(1)}%
+              Unit ({metrics.unitDilokasiKva.toLocaleString('id-ID')} kVA)
             </span>
           </div>
           <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
-            <span>Kapasitas Siap:</span>
+            <span>Beban / BBM:</span>
             <span className="font-semibold text-blue-800 font-mono">
-              {metrics.unitDilokasiKva.toLocaleString('id-ID')} kVA
+              {metrics.unitDilokasiBebanKva} kVA • {formatBbm(metrics.unitDilokasiBbmJam)} L/j
             </span>
           </div>
         </div>
 
-        {/* Card 6: Belum Tiba / Logistik */}
+        {/* Card 6: Belum Tiba (1 Unit / 350 kVA / Beban 112 kVA / BBM 39,51) */}
         <div
           onClick={() => onFilterQuickStatus?.('Belum Tiba')}
           className="bg-white rounded-xl border border-amber-300 p-4 shadow-sm hover:shadow hover:border-amber-400 transition-all cursor-pointer group"
-          title="Klik untuk memfilter unit genset yang masih dalam perjalanan / belum tiba"
+          title="Klik untuk memfilter unit genset berstatus Belum Tiba"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">
@@ -184,16 +183,13 @@ export const KpiCards: React.FC<KpiCardsProps> = ({
               {metrics.unitBelumTiba}
             </span>
             <span className="text-xs font-medium text-slate-500">
-              / {metrics.totalUnits} Unit
-            </span>
-            <span className="ml-auto text-xs font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
-              {((metrics.unitBelumTiba / (metrics.totalUnits || 1)) * 100).toFixed(1)}%
+              Unit ({metrics.unitBelumTibaKva.toLocaleString('id-ID')} kVA)
             </span>
           </div>
           <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
-            <span>Kapasitas Pending:</span>
+            <span>Beban / BBM:</span>
             <span className="font-semibold text-amber-800 font-mono">
-              {metrics.unitBelumTibaKva.toLocaleString('id-ID')} kVA
+              {metrics.unitBelumTibaBebanKva} kVA • {formatBbm(metrics.unitBelumTibaBbmJam)} L/j
             </span>
           </div>
         </div>
@@ -211,18 +207,18 @@ export const KpiCards: React.FC<KpiCardsProps> = ({
               (Total {metrics.totalCapacityKva.toLocaleString('id-ID')} kVA / ~{metrics.totalCapacityMva} MVA)
             </span>
           </div>
-          <div className="flex items-center gap-4 text-xs font-medium">
+          <div className="flex flex-wrap items-center gap-4 text-xs font-medium">
             <span className="flex items-center gap-1.5 text-emerald-700">
               <span className="h-2.5 w-2.5 rounded-full bg-emerald-600 inline-block"></span>
-              Operasi: {metrics.unitOperasi} unit ({metrics.realisasiOperasiPersen.toFixed(1)}%)
+              Operasi: {metrics.unitOperasi} unit ({metrics.unitOperasiKva.toLocaleString('id-ID')} kVA)
             </span>
             <span className="flex items-center gap-1.5 text-blue-700">
               <span className="h-2.5 w-2.5 rounded-full bg-blue-600 inline-block"></span>
-              Dilokasi: {metrics.unitDilokasi} unit ({((metrics.unitDilokasi / metrics.totalUnits) * 100).toFixed(1)}%)
+              Di lokasi: {metrics.unitDilokasi} unit ({metrics.unitDilokasiKva.toLocaleString('id-ID')} kVA)
             </span>
             <span className="flex items-center gap-1.5 text-amber-700">
               <span className="h-2.5 w-2.5 rounded-full bg-amber-500 inline-block"></span>
-              Belum Tiba: {metrics.unitBelumTiba} unit ({((metrics.unitBelumTiba / metrics.totalUnits) * 100).toFixed(1)}%)
+              Belum Tiba: {metrics.unitBelumTiba} unit ({metrics.unitBelumTibaKva.toLocaleString('id-ID')} kVA)
             </span>
           </div>
         </div>
@@ -237,7 +233,7 @@ export const KpiCards: React.FC<KpiCardsProps> = ({
           <div
             style={{ width: `${(metrics.unitDilokasi / (metrics.totalUnits || 1)) * 100}%` }}
             className="bg-blue-600 h-full transition-all duration-500 cursor-pointer"
-            title={`Dilokasi Siap: ${metrics.unitDilokasi} unit (${metrics.unitDilokasiKva.toLocaleString('id-ID')} kVA)`}
+            title={`Di lokasi: ${metrics.unitDilokasi} unit (${metrics.unitDilokasiKva.toLocaleString('id-ID')} kVA)`}
           ></div>
           <div
             style={{ width: `${(metrics.unitBelumTiba / (metrics.totalUnits || 1)) * 100}%` }}
@@ -251,8 +247,8 @@ export const KpiCards: React.FC<KpiCardsProps> = ({
           <span>
             ⚡ <strong>Realisasi Kedatangan di Lokasi:</strong> Sebanyak <strong>{metrics.unitOperasi + metrics.unitDilokasi} dari {metrics.totalUnits} unit ({metrics.realisasiTibaPersen.toFixed(1)}%)</strong> telah berada di Pulau Madura.
           </span>
-          <span className="font-semibold text-slate-700">
-            Total Beban Pasokan: {metrics.totalBebanOperasiKva.toLocaleString('id-ID')} kVA • BBM: {metrics.totalEstimasiBbmLiterJam} L/jam
+          <span className="font-semibold text-slate-700 font-mono">
+            Total Beban Trafo: {metrics.totalBebanTrafoAllKva.toLocaleString('id-ID')} kVA (Operasi: {metrics.unitOperasiBebanKva.toLocaleString('id-ID')} kVA) • Total BBM: {formatBbm(metrics.totalEstimasiBbmAllJam)} L/jam
           </span>
         </div>
       </div>

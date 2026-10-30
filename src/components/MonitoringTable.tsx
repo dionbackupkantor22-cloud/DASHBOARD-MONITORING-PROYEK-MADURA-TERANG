@@ -12,7 +12,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { GensetRecord, FilterState } from '../types/dashboard';
-import { isOperasiStatus } from '../services/dataService';
+import { isOperasiStatus, isDilokasiStatus } from '../services/dataService';
 
 interface MonitoringTableProps {
   records: GensetRecord[];
@@ -37,9 +37,8 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
     let dilokasi = 0;
     let belumTiba = 0;
     records.forEach((r) => {
-      const st = r.status.toLowerCase();
       if (isOperasiStatus(r.status)) operasi++;
-      else if (st.includes('dilokasi') || st.includes('lokasi')) dilokasi++;
+      else if (isDilokasiStatus(r.status)) dilokasi++;
       else belumTiba++;
     });
     return { operasi, dilokasi, belumTiba };
@@ -76,9 +75,13 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
         if (!matchSearch) return false;
       }
 
-      // Status filter
-      if (filterState.status !== 'ALL' && r.status !== filterState.status) {
-        return false;
+      // Status filter (handles both 'Di lokasi' and 'Dilokasi')
+      if (filterState.status !== 'ALL') {
+        if (filterState.status.toLowerCase().includes('lokasi')) {
+          if (!isDilokasiStatus(r.status)) return false;
+        } else if (r.status.toLowerCase() !== filterState.status.toLowerCase()) {
+          return false;
+        }
       }
 
       // ULP filter
@@ -220,11 +223,11 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
         </span>
       );
     }
-    if (s.includes('dilokasi') || s.includes('lokasi')) {
+    if (isDilokasiStatus(status)) {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200">
           <MapPin className="h-3 w-3 text-blue-600" />
-          Dilokasi
+          Di lokasi
         </span>
       );
     }
@@ -333,7 +336,7 @@ export const MonitoringTable: React.FC<MonitoringTableProps> = ({
           >
             <option value="ALL">Semua Status ({records.length})</option>
             <option value="Operasi">Operasi ({statusCounts.operasi})</option>
-            <option value="Dilokasi">Dilokasi ({statusCounts.dilokasi})</option>
+            <option value="Di lokasi">Di lokasi ({statusCounts.dilokasi})</option>
             <option value="Belum Tiba">Belum Tiba ({statusCounts.belumTiba})</option>
           </select>
         </div>
